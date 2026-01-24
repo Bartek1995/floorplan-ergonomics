@@ -1,5 +1,7 @@
-# Vue 3 + TypeScript + Vite
+# sakai-vue-ts
+Sakai 4.2.0 TypeScript
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+## License
+
+This project is based on [PrimeTek's UI template](https://github.com/primefaces/primevue), which is licensed under the MIT License. See the [LICENSE](./LICENSE) file for more details.

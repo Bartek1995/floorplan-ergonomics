@@ -119,3 +119,12 @@ docker-compose.override.yml
 .env.staging
 secrets/
 config/local/
+
+# Example / Reference projects
+example_frontend/
+example/
+examples/
+
+
+# copilot
+.github/copilot-instructions.md

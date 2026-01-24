@@ -1,40 +1,52 @@
-import axios from 'axios'
-import type { Layout, LayoutData } from '../types/layout'
+// src/api/layoutApi.ts
+import api from './apiService';
 
-const API_BASE = 'http://localhost:8000/api'
-
-const api = axios.create({
-  baseURL: API_BASE,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
-
-export const layoutApi = {
-  // List all layouts
-  listLayouts: () => api.get<Layout[]>('/layouts/'),
-
-  // Get single layout
-  getLayout: (id: number) => api.get<Layout>(`/layouts/${id}/`),
-
-  // Create new layout
-  createLayout: (data: { name: string; layout_data: LayoutData }) =>
-    api.post<Layout>('/layouts/', data),
-
-  // Update layout
-  updateLayout: (id: number, data: { name?: string; layout_data?: LayoutData }) =>
-    api.put<Layout>(`/layouts/${id}/`, data),
-
-  // Partial update
-  patchLayout: (id: number, data: Partial<Layout>) =>
-    api.patch<Layout>(`/layouts/${id}/`, data),
-
-  // Delete layout
-  deleteLayout: (id: number) => api.delete(`/layouts/${id}/`),
-
-  // Search layouts
-  searchLayouts: (query: string) => 
-    api.get<Layout[]>('/layouts/', { params: { search: query } }),
+export interface LayoutData {
+    walls?: Array<{ x1: number; y1: number; x2: number; y2: number }>;
+    objects?: Array<{ x: number; y: number; w: number; h: number; type: string }>;
+    doors?: Array<{ x: number; y: number; width: number; height: number }>;
+    [key: string]: unknown;
 }
 
-export default api
+export interface Layout {
+    id: number;
+    name: string;
+    layout_data: LayoutData;
+    created_at: string;
+    updated_at: string;
+}
+
+export const layoutApi = {
+    /**
+     * Pobierz wszystkie plany piętra
+     */
+    listLayouts: () => api.get<Layout[]>('/layouts/'),
+
+    /**
+     * Pobierz konkretny plan
+     */
+    getLayout: (id: number) => api.get<Layout>(`/layouts/${id}/`),
+
+    /**
+     * Utwórz nowy plan
+     */
+    createLayout: (data: { name: string; layout_data?: LayoutData }) =>
+        api.post<Layout>('/layouts/', data),
+
+    /**
+     * Zaktualizuj plan (całościowo)
+     */
+    updateLayout: (id: number, data: Partial<Layout>) =>
+        api.put<Layout>(`/layouts/${id}/`, data),
+
+    /**
+     * Zaktualizuj plan (częściowo)
+     */
+    patchLayout: (id: number, data: Partial<Layout>) =>
+        api.patch<Layout>(`/layouts/${id}/`, data),
+
+    /**
+     * Usuń plan
+     */
+    deleteLayout: (id: number) => api.delete(`/layouts/${id}/`)
+};
