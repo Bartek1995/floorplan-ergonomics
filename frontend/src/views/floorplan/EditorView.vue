@@ -1,155 +1,156 @@
 <!-- src/views/floorplan/EditorView.vue -->
 <template>
-    <div class="flex flex-col h-full gap-4 p-4">
-        <!-- Toolbar -->
-        <div class="flex gap-2 items-center bg-surface-card rounded-lg p-3 shadow-sm">
-            <Button
-                icon="pi pi-home"
-                severity="secondary"
-                text
-                rounded
-                @click="$router.push({ name: 'layouts-list' })"
-                v-tooltip="'Powrót do listy planów'"
-            />
-            <Divider layout="vertical" />
-
-            <span class="text-sm font-semibold" v-if="currentLayout">
-                {{ currentLayout.name }}
-            </span>
-            <span class="text-sm text-surface-500" v-else>Nowy plan</span>
-
-            <div class="grow" />
-
-            <InputGroup class="w-64">
-                <InputText
-                    v-model="layoutName"
-                    placeholder="Nazwa planu..."
-                    @blur="saveName"
-                />
-            </InputGroup>
-
-            <Button
-                icon="pi pi-save"
-                severity="success"
-                rounded
-                @click="saveLayout"
-                :loading="isLoading"
-                v-tooltip="'Zapisz plan (Ctrl+S)'"
-            />
-
-            <Button
-                icon="pi pi-download"
-                severity="info"
-                rounded
-                @click="exportLayout"
-                v-tooltip="'Eksportuj plan'"
-            />
-
-            <Button
-                icon="pi pi-trash"
-                severity="danger"
-                rounded
-                @click="confirmDelete"
-                v-if="currentLayout"
-                v-tooltip="'Usuń plan'"
-            />
-        </div>
-
-        <!-- Editor Canvas -->
-        <div class="grow bg-surface-ground rounded-lg overflow-hidden shadow-sm border border-surface-border">
-            <div class="w-full h-full flex items-center justify-center bg-surface-50">
-                <div class="text-center">
-                    <i class="pi pi-pencil text-6xl text-surface-400 mb-4" />
-                    <p class="text-surface-600">Edytor planu piętra (w trakcie implementacji)</p>
-                    <p class="text-surface-500 text-sm mt-2">Tutaj będzie kanvas z edytorem</p>
+    <div class="flex flex-col gap-4">
+        <Toolbar>
+            <template #start>
+                <div class="flex flex-col gap-1">
+                    <span>Edytor layoutu</span>
+                    <span v-if="flat">Mieszkanie: {{ flat.name }}</span>
                 </div>
-            </div>
-        </div>
+            </template>
+            <template #end>
+                <div class="flex gap-2">
+                    <Button icon="pi pi-arrow-left" label="Powrot" @click="goBack" />
+                    <Button
+                        v-if="flat"
+                        icon="pi pi-building"
+                        label="Mieszkanie"
+                        @click="openFlat"
+                    />
+                    <Button icon="pi pi-refresh" @click="loadFlat" :loading="isLoading" />
+                </div>
+            </template>
+        </Toolbar>
 
-        <!-- Info -->
-        <Message v-if="error" severity="error" @close="clearError" class="w-full">
+        <ProgressSpinner v-if="isLoading" />
+
+        <Splitter v-else>
+            <SplitterPanel :size="70">
+                <Card>
+                    <template #title>Podglad rzutu</template>
+                    <template #content>
+                        <Image
+                            v-if="layout?.image"
+                            :src="layout.image"
+                            :alt="flat?.name || 'Layout'"
+                            preview
+                        />
+                        <Message v-else severity="info">
+                            Brak rzutu - zaimportuj plik, aby zaczac.
+                        </Message>
+                    </template>
+                </Card>
+            </SplitterPanel>
+            <SplitterPanel :size="30">
+                <div class="flex flex-col gap-4">
+                    <Card>
+                        <template #title>Import rzutu</template>
+                        <template #content>
+                            <LayoutImportForm
+                                v-if="flat"
+                                :flatId="flat.id"
+                                :initialScale="layout?.scale_cm_per_px ?? null"
+                                :showCancel="false"
+                                @uploaded="handleLayoutUploaded"
+                            />
+                            <Message v-else severity="warn">
+                                Brak danych mieszkania.
+                            </Message>
+                        </template>
+                    </Card>
+
+                    <Card>
+                        <template #title>Podsumowanie</template>
+                        <template #content>
+                            <DataTable :value="summaryRows" dataKey="label">
+                                <Column field="label" header="Pole" />
+                                <Column field="value" header="Wartosc" />
+                            </DataTable>
+                        </template>
+                    </Card>
+                </div>
+            </SplitterPanel>
+        </Splitter>
+
+        <Message v-if="error" severity="error">
             {{ error }}
         </Message>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
-import { useLayoutStore } from '@/stores/layoutStore';
-import { useRouter, useRoute } from 'vue-router';
-import { useConfirm } from 'primevue/useconfirm';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import Button from 'primevue/button';
-import Divider from 'primevue/divider';
-import InputGroup from 'primevue/inputgroup';
-import InputText from 'primevue/inputtext';
+import Card from 'primevue/card';
+import Column from 'primevue/column';
+import DataTable from 'primevue/datatable';
+import Image from 'primevue/image';
 import Message from 'primevue/message';
+import ProgressSpinner from 'primevue/progressspinner';
+import Splitter from 'primevue/splitter';
+import SplitterPanel from 'primevue/splitterpanel';
+import Toolbar from 'primevue/toolbar';
+import { flatApi, type Flat, type Layout } from '@/api/flatApi';
+import LayoutImportForm from '@/components/Layouts/LayoutImportForm.vue';
 
 const router = useRouter();
 const route = useRoute();
-const confirm = useConfirm();
-const layoutStore = useLayoutStore();
 
-const layoutName = ref('');
+const flat = ref<Flat | null>(null);
+const isLoading = ref(false);
+const error = ref('');
 
-const currentLayout = computed(() => layoutStore.currentLayout);
-const isLoading = computed(() => layoutStore.isLoading);
-const error = computed(() => layoutStore.error);
+const flatId = computed(() => Number(route.params.id));
+const layout = computed(() => flat.value?.layout ?? null);
 
-onMounted(async () => {
-    const layoutId = route.query.id;
-    if (layoutId) {
-        await layoutStore.fetchLayout(Number(layoutId));
-        if (currentLayout.value) {
-            layoutName.value = currentLayout.value.name;
-        }
+const loadFlat = async () => {
+    if (!flatId.value) return;
+    isLoading.value = true;
+    error.value = '';
+    try {
+        const response = await flatApi.getFlat(flatId.value);
+        flat.value = response.data;
+    } catch (err) {
+        console.error('Flat load error:', err);
+        error.value = 'Nie udalo sie pobrac danych mieszkania.';
+    } finally {
+        isLoading.value = false;
     }
+};
+
+const summaryRows = computed(() => {
+    return [
+        { label: 'Status', value: layout.value ? 'Dodany' : 'Brak' },
+        { label: 'Skala (cm/px)', value: formatScale(layout.value?.scale_cm_per_px ?? null) },
+        { label: 'Sciany', value: String(layout.value?.layout_data.walls?.length || 0) },
+        { label: 'Punkty', value: String(layout.value?.layout_data.points?.length || 0) }
+    ];
 });
 
-const saveName = async () => {
-    if (currentLayout.value && layoutName.value !== currentLayout.value.name) {
-        await layoutStore.updateLayoutName(currentLayout.value.id, layoutName.value);
+const formatScale = (scale: number | null) => {
+    if (scale === null || scale === undefined) return '-';
+    return scale.toFixed(3);
+};
+
+const handleLayoutUploaded = (newLayout: Layout) => {
+    if (flat.value) {
+        flat.value.layout = newLayout;
     }
 };
 
-const saveLayout = async () => {
-    if (currentLayout.value) {
-        await layoutStore.saveLayout(currentLayout.value.layout_data);
+const goBack = () => {
+    if (flatId.value) {
+        router.push({ name: 'flat-detail', params: { id: flatId.value } });
+        return;
     }
+    router.push({ name: 'flats-list' });
 };
 
-const exportLayout = () => {
-    if (currentLayout.value) {
-        const data = JSON.stringify(currentLayout.value, null, 2);
-        const blob = new Blob([data], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${currentLayout.value.name}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    }
+const openFlat = () => {
+    if (!flatId.value) return;
+    router.push({ name: 'flat-detail', params: { id: flatId.value } });
 };
 
-const confirmDelete = () => {
-    confirm.require({
-        message: `Na pewno chcesz usunąć plan "${currentLayout.value?.name}"?`,
-        header: 'Potwierdzenie',
-        icon: 'pi pi-exclamation-triangle',
-        accept: deleteLayout,
-        reject: () => {}
-    });
-};
-
-const deleteLayout = async () => {
-    if (currentLayout.value) {
-        await layoutStore.deleteLayout(currentLayout.value.id);
-        await router.push({ name: 'layouts-list' });
-    }
-};
-
-const clearError = () => {
-    layoutStore.clearError();
-};
+onMounted(loadFlat);
 </script>
-
-<style scoped></style>

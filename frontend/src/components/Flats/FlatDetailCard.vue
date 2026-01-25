@@ -42,7 +42,7 @@
                   label="Dodaj rzut"
                   icon="pi pi-upload"
                   outlined
-                  @click="goToEditor"
+                  @click="showImportDialog = true"
                 />
               </div>
             </div>
@@ -108,6 +108,12 @@
           <template #content>
             <div class="flex flex-col gap-2">
               <Button
+                label="Importuj rzut"
+                icon="pi pi-upload"
+                outlined
+                @click="showImportDialog = true"
+              />
+              <Button
                 label="Edytuj layout"
                 icon="pi pi-pencil"
                 class="w-full"
@@ -133,6 +139,16 @@
         </Card>
       </div>
     </div>
+
+    <Dialog v-model:visible="showImportDialog" header="Import layoutu" modal>
+      <LayoutImportForm
+        v-if="flat"
+        :flatId="flat.id"
+        :initialScale="flat.layout?.scale_cm_per_px ?? null"
+        @cancel="showImportDialog = false"
+        @uploaded="handleLayoutUploaded"
+      />
+    </Dialog>
   </div>
 </template>
 
@@ -145,7 +161,9 @@ import Message from 'primevue/message'
 import ProgressSpinner from 'primevue/progressspinner'
 import Divider from 'primevue/divider'
 import Tag from 'primevue/tag'
-import { flatApi, type Flat } from '@/api/flatApi'
+import Dialog from 'primevue/dialog'
+import { flatApi, type Flat, type Layout } from '@/api/flatApi'
+import LayoutImportForm from '@/components/Layouts/LayoutImportForm.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -153,6 +171,7 @@ const route = useRoute()
 const flat = ref<Flat | null>(null)
 const isLoading = ref(false)
 const error = ref('')
+const showImportDialog = ref(false)
 
 const flatId = parseInt(route.params.id as string)
 
@@ -176,6 +195,13 @@ const goBack = () => {
 
 const goToEditor = () => {
   router.push({ name: 'floorplan-editor', params: { id: flatId } })
+}
+
+const handleLayoutUploaded = (layout: Layout) => {
+  if (flat.value) {
+    flat.value.layout = layout
+  }
+  showImportDialog.value = false
 }
 
 const confirmDelete = async () => {

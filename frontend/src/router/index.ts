@@ -27,7 +27,7 @@ const routes: Array<RouteRecordRaw> = [
                 path: 'flats/:id',
                 name: 'flat-detail',
                 component: () => import('@/views/floorplan/FlatDetailView.vue'),
-                meta: { requiresAuth: true, title: 'Szczegóły mieszkania' }
+                meta: { requiresAuth: true, title: 'Szczegoly mieszkania' }
             },
             {
                 path: 'diagnostics',
@@ -42,22 +42,22 @@ const routes: Array<RouteRecordRaw> = [
                 meta: { requiresAuth: true, title: 'Debug' }
             },
             {
-                path: 'editor',
+                path: 'editor/:id',
                 name: 'floorplan-editor',
                 component: () => import('@/views/floorplan/EditorView.vue'),
-                meta: { requiresAuth: true, title: 'Edytor planu piętra' }
+                meta: { requiresAuth: true, title: 'Edytor layoutu' }
             },
             {
                 path: 'layouts',
                 name: 'layouts-list',
                 component: () => import('@/views/floorplan/LayoutsListView.vue'),
-                meta: { requiresAuth: true, title: 'Plany pięter' }
+                meta: { requiresAuth: true, title: 'Rzuty' }
             },
             {
                 path: 'layouts/:id',
                 name: 'layout-detail',
                 component: () => import('@/views/floorplan/LayoutDetailView.vue'),
-                meta: { requiresAuth: true, title: 'Szczegóły planu' }
+                meta: { requiresAuth: true, title: 'Szczegoly layoutu' }
             },
             {
                 path: 'settings',
@@ -77,13 +77,13 @@ const routes: Array<RouteRecordRaw> = [
         path: '/auth/access',
         name: 'accessDenied',
         component: () => import('@/views/general/AuthAccessDenied.vue'),
-        meta: { title: 'Brak dostępu' }
+        meta: { title: 'Brak dostepu' }
     },
     {
         path: '/auth/error',
         name: 'error',
         component: () => import('@/views/general/AuthError.vue'),
-        meta: { title: 'Błąd uwierzytelniania' }
+        meta: { title: 'Blad uwierzytelniania' }
     },
     {
         path: '/:pathMatch(.*)*',
@@ -98,13 +98,13 @@ const router = createRouter({
     routes
 });
 
-// recovery dla błędów dynamicznych importów
+// recovery dla bledow dynamicznych importow
 router.onError((err, to) => {
     if (err?.message?.includes?.('Failed to fetch dynamically imported module')) {
         if (localStorage.getItem('vuetify:dynamic-reload')) {
-            console.error('Dynamic import error, reload nie pomógł', err);
+            console.error('Dynamic import error, reload nie pomogl', err);
         } else {
-            console.log('Przeładowanie strony w celu naprawy dynamic import error');
+            console.log('Przeladowanie strony w celu naprawy dynamic import error');
             localStorage.setItem('vuetify:dynamic-reload', 'true');
             location.assign(to.fullPath);
         }

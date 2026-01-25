@@ -1,130 +1,102 @@
 <!-- src/views/floorplan/LayoutsListView.vue -->
 <template>
-    <div class="flex flex-col h-full gap-4 p-4">
-        <!-- Header -->
-        <div class="flex gap-2 items-center justify-between bg-surface-card rounded-lg p-3 shadow-sm">
-            <div class="flex items-center gap-2">
-                <i class="pi pi-building text-2xl text-primary" />
-                <div>
-                    <h1 class="text-xl font-bold">Plany pięter</h1>
-                    <p class="text-sm text-surface-500">Zarządzaj planami pięter</p>
+    <div class="flex flex-col gap-4">
+        <Toolbar>
+            <template #start>
+                <div class="flex flex-col gap-1">
+                    <span>Layouty</span>
+                    <span>Lista rzutow powiazanych z mieszkaniami</span>
                 </div>
-            </div>
+            </template>
+            <template #end>
+                <div class="flex gap-2">
+                    <InputText v-model="searchQuery" placeholder="Szukaj po ID lub mieszkaniu" />
+                    <Button icon="pi pi-refresh" @click="refreshLayouts" :loading="isLoading" />
+                    <Button icon="pi pi-plus" label="Nowy layout" @click="showNewLayoutDialog = true" />
+                </div>
+            </template>
+        </Toolbar>
 
-            <Button
-                icon="pi pi-plus"
-                label="Nowy plan"
-                @click="showNewLayoutDialog = true"
-                severity="success"
-            />
-        </div>
+        <DataTable :value="filteredLayouts" dataKey="id" :loading="isLoading">
+            <Column field="id" header="ID" />
+            <Column header="Mieszkanie">
+                <template #body="{ data }">
+                    <Tag v-if="data.flat" :value="`#${data.flat}`" severity="info" />
+                    <Tag v-else value="Brak" severity="warning" />
+                </template>
+            </Column>
+            <Column header="Skala">
+                <template #body="{ data }">
+                    <span>{{ formatScale(data.scale_cm_per_px) }}</span>
+                </template>
+            </Column>
+            <Column header="Sciany">
+                <template #body="{ data }">
+                    <span>{{ getWallCount(data) }}</span>
+                </template>
+            </Column>
+            <Column header="Punkty">
+                <template #body="{ data }">
+                    <span>{{ getPointCount(data) }}</span>
+                </template>
+            </Column>
+            <Column header="Akcje">
+                <template #body="{ data }">
+                    <div class="flex gap-2">
+                        <Button
+                            icon="pi pi-eye"
+                            label="Szczegoly"
+                            size="small"
+                            @click="openDetails(data)"
+                        />
+                        <Button
+                            icon="pi pi-pencil"
+                            label="Edytor"
+                            size="small"
+                            severity="info"
+                            :disabled="!data.flat"
+                            @click="openEditor(data)"
+                        />
+                        <Button
+                            icon="pi pi-trash"
+                            size="small"
+                            severity="danger"
+                            text
+                            @click="confirmDeleteLayout(data)"
+                        />
+                    </div>
+                </template>
+            </Column>
+            <template #empty>
+                <Message severity="info">Brak layoutow</Message>
+            </template>
+        </DataTable>
 
-        <!-- Search & Filters -->
-        <div class="flex gap-2">
-            <InputGroup class="grow">
-                <InputGroupAddon>
-                    <i class="pi pi-search" />
-                </InputGroupAddon>
-                <InputText v-model="searchQuery" placeholder="Szukaj planu..." />
-            </InputGroup>
-            <Button
-                icon="pi pi-refresh"
-                @click="refreshLayouts"
-                severity="secondary"
-                :loading="isLoading"
-            />
-        </div>
-
-        <!-- Layouts Grid -->
-        <div class="grow overflow-auto">
-            <ProgressSpinner v-if="isLoading && layouts.length === 0" class="mx-auto mt-8" />
-
-            <div v-else-if="filteredLayouts.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <Card v-for="layout in filteredLayouts" :key="layout.id" class="cursor-pointer hover:shadow-lg transition-shadow">
-                    <template #content>
-                        <div class="flex flex-col gap-3">
-                            <!-- Thumbnail -->
-                            <div class="bg-surface-100 rounded h-40 flex items-center justify-center">
-                                <i class="pi pi-image text-3xl text-surface-400" />
-                            </div>
-
-                            <!-- Name -->
-                            <div>
-                                <h3 class="font-semibold truncate">{{ layout.name }}</h3>
-                                <p class="text-sm text-surface-500">
-                                    {{ new Date(layout.updated_at).toLocaleDateString('pl-PL') }}
-                                </p>
-                            </div>
-
-                            <!-- Info -->
-                            <div class="grid grid-cols-2 gap-2 text-sm">
-                                <div class="bg-surface-50 rounded p-2">
-                                    <p class="text-surface-600">ID: {{ layout.id }}</p>
-                                </div>
-                                <div class="bg-surface-50 rounded p-2">
-                                    <p class="text-surface-600">Obiekty: {{ getObjectCount(layout) }}</p>
-                                </div>
-                            </div>
-
-                            <!-- Actions -->
-                            <div class="flex gap-2">
-                                <Button
-                                    icon="pi pi-pencil"
-                                    label="Edytuj"
-                                    class="grow"
-                                    @click="openEditor(layout)"
-                                    severity="info"
-                                    size="small"
-                                />
-                                <Button
-                                    icon="pi pi-trash"
-                                    @click="confirmDeleteLayout(layout)"
-                                    severity="danger"
-                                    size="small"
-                                    text
-                                />
-                            </div>
-                        </div>
-                    </template>
-                </Card>
-            </div>
-
-            <!-- Empty State -->
-            <div v-else class="flex flex-col items-center justify-center h-64">
-                <i class="pi pi-inbox text-5xl text-surface-400 mb-4" />
-                <p class="text-surface-600 font-semibold">Brak planów</p>
-                <p class="text-sm text-surface-500">Utwórz nowy plan aby zacząć</p>
-            </div>
-        </div>
-
-        <!-- Error -->
-        <Message v-if="error" severity="error" @close="clearError" class="w-full">
+        <Message v-if="error" severity="error" @close="clearError">
             {{ error }}
         </Message>
 
-        <!-- New Layout Dialog -->
-        <Dialog v-model:visible="showNewLayoutDialog" header="Nowy plan piętra" modal>
-            <div class="flex flex-col gap-4">
-                <div>
-                    <label class="block text-sm font-semibold mb-2">Nazwa planu</label>
-                    <InputText
-                        v-model="newLayoutName"
-                        placeholder="np. Salon, Sypialnia..."
-                        class="w-full"
-                        @keyup.enter="createNewLayout"
+        <Dialog v-model:visible="showNewLayoutDialog" header="Nowy layout" modal>
+            <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-2">
+                    <label for="layout-flat">Mieszkanie (opcjonalnie)</label>
+                    <Dropdown
+                        id="layout-flat"
+                        v-model="selectedFlatId"
+                        :options="flatOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Wybierz mieszkanie"
+                        showClear
                     />
                 </div>
-                <div class="flex gap-2 justify-end">
+                <div class="flex gap-2">
                     <Button
                         label="Anuluj"
-                        @click="showNewLayoutDialog = false"
                         severity="secondary"
+                        @click="showNewLayoutDialog = false"
                     />
-                    <Button
-                        label="Utwórz"
-                        @click="createNewLayout"
-                        :loading="isLoading"
-                    />
+                    <Button label="Utworz" @click="createNewLayout" :loading="isLoading" />
                 </div>
             </div>
         </Dialog>
@@ -132,18 +104,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useLayoutStore } from '@/stores/layoutStore';
 import { useRouter } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import Button from 'primevue/button';
-import Card from 'primevue/card';
+import Column from 'primevue/column';
+import DataTable from 'primevue/datatable';
 import Dialog from 'primevue/dialog';
+import Dropdown from 'primevue/dropdown';
 import InputText from 'primevue/inputtext';
-import InputGroup from 'primevue/inputgroup';
-import InputGroupAddon from 'primevue/inputgroupaddon';
 import Message from 'primevue/message';
-import ProgressSpinner from 'primevue/progressspinner';
+import Tag from 'primevue/tag';
+import Toolbar from 'primevue/toolbar';
+import { flatApi, type Flat } from '@/api/flatApi';
 import type { Layout } from '@/api/layoutApi';
 
 const router = useRouter();
@@ -152,43 +126,69 @@ const layoutStore = useLayoutStore();
 
 const searchQuery = ref('');
 const showNewLayoutDialog = ref(false);
-const newLayoutName = ref('');
+const selectedFlatId = ref<number | null>(null);
+const flatOptions = ref<Array<{ label: string; value: number }>>([]);
 
-// Rozpakowuj store aby dostać reaktywne wartości
 const { layouts, isLoading, error } = layoutStore;
 
 const filteredLayouts = computed(() => {
-    const query = searchQuery.value.toLowerCase();
-    if (!Array.isArray(layouts)) {
-        return [];
+    const query = searchQuery.value.trim().toLowerCase();
+    const list = Array.isArray(layouts.value) ? layouts.value : [];
+    if (!query) {
+        return list;
     }
-    return layouts.filter((layout: Layout) =>
-        layout.name.toLowerCase().includes(query)
-    );
+    return list.filter((layout: Layout) => {
+        const idText = String(layout.id);
+        const flatText = layout.flat ? String(layout.flat) : '';
+        return idText.includes(query) || flatText.includes(query);
+    });
 });
 
 onMounted(() => {
     refreshLayouts();
+    loadFlats();
 });
+
+const loadFlats = async () => {
+    try {
+        const response = await flatApi.listFlats();
+        const data = Array.isArray(response.data)
+            ? response.data
+            : response.data.results || [];
+        flatOptions.value = data.map((flat: Flat) => ({
+            label: flat.name,
+            value: flat.id
+        }));
+    } catch (err) {
+        console.error('Flats load error:', err);
+    }
+};
 
 const refreshLayouts = async () => {
     await layoutStore.fetchLayouts();
 };
 
+const openDetails = (layout: Layout) => {
+    router.push({
+        name: 'layout-detail',
+        params: { id: layout.id }
+    });
+};
+
 const openEditor = (layout: Layout) => {
-    layoutStore.selectLayout(layout);
+    if (!layout.flat) return;
     router.push({
         name: 'floorplan-editor',
-        query: { id: layout.id }
+        params: { id: layout.flat }
     });
 };
 
 const createNewLayout = async () => {
-    if (!newLayoutName.value.trim()) return;
     try {
-        await layoutStore.createLayout(newLayoutName.value);
+        const created = await layoutStore.createLayout(selectedFlatId.value ?? null);
         showNewLayoutDialog.value = false;
-        newLayoutName.value = '';
+        selectedFlatId.value = null;
+        router.push({ name: 'layout-detail', params: { id: created.id } });
     } catch (err) {
         console.error(err);
     }
@@ -196,7 +196,7 @@ const createNewLayout = async () => {
 
 const confirmDeleteLayout = (layout: Layout) => {
     confirm.require({
-        message: `Na pewno chcesz usunąć plan "${layout.name}"?`,
+        message: `Na pewno chcesz usunac layout #${layout.id}?`,
         header: 'Potwierdzenie',
         icon: 'pi pi-exclamation-triangle',
         accept: () => deleteLayout(layout.id),
@@ -208,15 +208,20 @@ const deleteLayout = async (id: number) => {
     await layoutStore.deleteLayout(id);
 };
 
-const getObjectCount = (layout: Layout) => {
-    const data = layout.layout_data;
-    const count = (data.objects?.length || 0) + (data.doors?.length || 0);
-    return count;
+const getWallCount = (layout: Layout) => {
+    return layout.layout_data.walls?.length || 0;
+};
+
+const getPointCount = (layout: Layout) => {
+    return layout.layout_data.points?.length || 0;
+};
+
+const formatScale = (scale: number | null) => {
+    if (scale === null || scale === undefined) return '-';
+    return scale.toFixed(3);
 };
 
 const clearError = () => {
     layoutStore.clearError();
 };
 </script>
-
-<style scoped></style>

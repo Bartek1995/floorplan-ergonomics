@@ -20,7 +20,7 @@ const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout()
 const quickMenuRef = ref<InstanceType<typeof Menu> | null>(null)
 const userMenuRef = ref<InstanceType<typeof Menu> | null>(null)
 
-// Dane użytkownika
+// Dane uzytkownika
 const isLoggedIn = computed(() => auth.isLoggedIn)
 const user = computed(() => auth.user)
 const displayName = computed(() => user.value?.first_name || user.value?.username || 'Guest')
@@ -31,38 +31,38 @@ const initials = computed(() => {
   return (a[0] || 'G').toUpperCase() + (b[0] || (a[1] || 'U')).toUpperCase()
 })
 
-// Przykładowe liczby/skrót do funkcji — podłącz pod swoje API
+// Przykladowe liczby/skrot do funkcji - podlacz pod swoje API
 const unread = ref(3)
 
-// Meny szybkiego dostępu (ikona „apps")
+// Meny szybkiego dostepu (ikona "apps")
 const quickMenuItems: MenuItem[] = [
-  { label: 'Lista planów', icon: 'pi pi-building', command: () => router.push('/layouts') },
-  { label: 'Nowy plan', icon: 'pi pi-plus', command: () => router.push('/editor') },
+  { label: 'Lista mieszkan', icon: 'pi pi-building', command: () => router.push('/') },
+  { label: 'Rzuty', icon: 'pi pi-image', command: () => router.push('/layouts') },
   { separator: true },
-  { label: 'Edytor', icon: 'pi pi-pencil', command: () => router.push('/editor') },
+  { label: 'Diagnostyka', icon: 'pi pi-wrench', command: () => router.push('/diagnostics') },
 ]
 
-// Menu użytkownika
+// Menu uzytkownika
 const userMenuItems: MenuItem[] = [
-  { label: 'Panel główny', icon: 'pi pi-home', command: () => router.push('/') },
+  { label: 'Panel glowny', icon: 'pi pi-home', command: () => router.push('/') },
   { label: 'Ustawienia', icon: 'pi pi-cog', command: () => router.push('/settings') },
   { separator: true },
   {
     label: 'Wyloguj',
     icon: 'pi pi-sign-out',
     command: async () => {
-    auth.logout()
+      auth.logout()
     },
   },
 ]
 
-// Handlery otwierania popupów
+// Handlery otwierania popupow
 function openQuickMenu(e: MouseEvent) {
   quickMenuRef.value?.toggle(e)
 }
 function openUserMenu(e: MouseEvent) {
   if (!isLoggedIn.value) {
-    router.push('/login')
+    router.push('/auth/login')
     return
   }
   userMenuRef.value?.toggle(e)

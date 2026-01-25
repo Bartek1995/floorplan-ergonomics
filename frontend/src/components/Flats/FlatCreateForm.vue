@@ -72,6 +72,19 @@
       </small>
     </div>
 
+    <div class="flex flex-col gap-2">
+      <label for="layout-scale" class="font-medium">Skala (cm/px)</label>
+      <InputNumber
+        id="layout-scale"
+        v-model="layoutScale"
+        :min="0"
+        :step="0.01"
+        :minFractionDigits="2"
+        :maxFractionDigits="4"
+        placeholder="np. 0.5"
+      />
+    </div>
+
     <Message v-if="successMessage" severity="success" class="w-full">
       {{ successMessage }}
     </Message>
@@ -105,7 +118,7 @@ import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import FileUpload from 'primevue/fileupload'
 import Message from 'primevue/message'
-import { flatApi } from '@/api/flatApi'
+import { flatApi, layoutApi as flatLayoutApi } from '@/api/flatApi'
 
 const emit = defineEmits<{
   cancel: []
@@ -121,6 +134,7 @@ const form = ref({
 })
 
 const selectedImage = ref<File | null>(null)
+const layoutScale = ref<number | null>(null)
 const isLoading = ref(false)
 const successMessage = ref('')
 const errorMessage = ref('')
@@ -153,7 +167,10 @@ const handleSubmit = async () => {
     const flatId = response.data.id
 
     if (selectedImage.value) {
-      await flatApi.uploadLayoutImage(flatId, selectedImage.value)
+      const uploadResponse = await flatApi.uploadLayoutImage(flatId, selectedImage.value)
+      if (layoutScale.value !== null && layoutScale.value !== undefined) {
+        await flatLayoutApi.setScale(uploadResponse.data.id, layoutScale.value)
+      }
     }
 
     successMessage.value = 'Mieszkanie zostało utworzone!'
@@ -166,6 +183,7 @@ const handleSubmit = async () => {
       description: ''
     }
     selectedImage.value = null
+    layoutScale.value = null
 
     setTimeout(() => {
       emit('flat-created')

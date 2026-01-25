@@ -1,4 +1,4 @@
-# Instrukcje dla Asystenta AI – floorplan-ergonomics
+﻿# Instrukcje dla Asystenta AI – floorplan-ergonomics
 
 ## Django 5.2 + Django REST Framework + Vue 3 + TypeScript + PrimeVue
 
@@ -56,10 +56,10 @@ System:
 
 ```powershell
 # 1) Przejdź do backendu
-Set-Location C:\\Projects\\floorplan-ergonomics\\backend
+Set-Location C:\Projects\floorplan-ergonomics\backend
 
 # 2) Aktywuj venv (PowerShell)
-. .\\venv\\Scripts\\Activate.ps1
+. .\venv\Scripts\Activate.ps1
 
 # 3) Sprawdź, że używasz venv
 python -c "import sys; print(sys.executable)"
@@ -74,7 +74,7 @@ python manage.py shell
 ### Frontend (Vue/Vite)
 
 ```powershell
-Set-Location C:\\Projects\\floorplan-ergonomics\\frontend
+Set-Location C:\Projects\floorplan-ergonomics\frontend
 npm install
 npm run dev
 ```
@@ -172,7 +172,7 @@ Na końcu:
 
 > **WERDYKT:**
 >
-> * ✔️ Układ wygodny
+> * ✅ Układ wygodny
 > * ⚠️ Układ ryzykowny
 > * ❌ Układ męczący
 
@@ -220,11 +220,12 @@ Zakaz:
 
 ---
 
-## 7. Backend – analysis (NIE opcjonalny)
+## 7. Backend – analysis (PLANOWANY)
 
-Moduł `analysis` jest **rdzeniem biznesowym** aplikacji.
+Moduł `analysis` jest **rdzeniem biznesowym** aplikacji, ale **powstanie w kolejnym etapie**.
+Do czasu implementacji **nie twórz placeholderów**, chyba że wyraźnie o to proszę.
 
-Odpowiada za:
+Docelowo odpowiada za:
 
 * generowanie tras
 * analizę scenariuszy

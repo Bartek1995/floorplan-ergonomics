@@ -16,6 +16,7 @@ declare module 'vue' {
     FloatingConfigurator: typeof import('./components/FloatingConfigurator.vue')['default']
     FooterDynamicDialog: typeof import('./components/DataTable/FooterDynamicDialog.vue')['default']
     InputText: typeof import('primevue/inputtext')['default']
+    LayoutImportForm: typeof import('./components/Layouts/LayoutImportForm.vue')['default']
     Message: typeof import('primevue/message')['default']
     Password: typeof import('primevue/password')['default']
     ProgressBar: typeof import('primevue/progressbar')['default']

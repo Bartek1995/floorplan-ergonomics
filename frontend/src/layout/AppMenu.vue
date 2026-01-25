@@ -7,14 +7,15 @@ const model = ref([
     {
         label: 'Mieszkania',
         items: [
-            { label: 'Lista mieszkań', icon: 'pi pi-fw pi-building', to: '/' },
-            { label: 'Dodaj mieszkanie', icon: 'pi pi-fw pi-plus', to: '/', command: () => {} }
+            { label: 'Lista mieszkan', icon: 'pi pi-fw pi-building', to: '/' },
+            { label: 'Rzuty', icon: 'pi pi-fw pi-image', to: '/layouts' }
         ]
     },
     {
-        label: 'Narzędzia',
+        label: 'Narzedzia',
         items: [
-            { label: 'Edytor layoutu', icon: 'pi pi-fw pi-pencil', to: '/editor' }
+            { label: 'Diagnostyka', icon: 'pi pi-fw pi-wrench', to: '/diagnostics' },
+            { label: 'Debug', icon: 'pi pi-fw pi-bug', to: '/debug' }
         ]
     },
     {

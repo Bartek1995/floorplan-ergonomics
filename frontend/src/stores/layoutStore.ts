@@ -1,6 +1,6 @@
 // src/stores/layoutStore.ts
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
 import { layoutApi, type Layout, type LayoutData } from '@/api/layoutApi';
 
 export const useLayoutStore = defineStore('layout', () => {
@@ -10,10 +10,10 @@ export const useLayoutStore = defineStore('layout', () => {
     const error = ref<string | null>(null);
 
     // Edytor state
-    const editMode = ref<'select' | 'wall' | 'object' | 'door'>('select');
+    const editMode = ref<'select' | 'wall' | 'point'>('select');
     const scale = ref(1);
     const showGrid = ref(true);
-    const gridSize = ref(50); // 50px na canvasie = 5cm w rzeczywistości
+    const gridSize = ref(50); // 50px na canvasie = 5cm w rzeczywistosci
 
     // Gettery
     const currentLayoutId = computed(() => currentLayout.value?.id);
@@ -26,10 +26,13 @@ export const useLayoutStore = defineStore('layout', () => {
         error.value = null;
         try {
             const response = await layoutApi.listLayouts();
-            layouts.value = Array.isArray(response.data) ? response.data : [];
+            const data = Array.isArray(response.data)
+                ? response.data
+                : response.data?.results || [];
+            layouts.value = data;
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            error.value = `Błąd przy pobieraniu planów: ${message}`;
+            error.value = `Blad przy pobieraniu layoutow: ${message}`;
             console.error(err);
             layouts.value = [];
         } finally {
@@ -45,23 +48,23 @@ export const useLayoutStore = defineStore('layout', () => {
             currentLayout.value = response.data;
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            error.value = `Błąd przy pobieraniu planu: ${message}`;
+            error.value = `Blad przy pobieraniu layoutu: ${message}`;
             console.error(err);
         } finally {
             loading.value = false;
         }
     };
 
-    const createLayout = async (name: string) => {
+    const createLayout = async (flatId?: number | null, layoutData?: LayoutData) => {
         loading.value = true;
         error.value = null;
         try {
             const response = await layoutApi.createLayout({
-                name,
-                layout_data: {
+                flat: flatId ?? null,
+                layout_data: layoutData ?? {
                     walls: [],
-                    objects: [],
-                    doors: []
+                    points: [],
+                    scale_cm_per_px: null
                 }
             });
             layouts.value.push(response.data);
@@ -69,7 +72,7 @@ export const useLayoutStore = defineStore('layout', () => {
             return response.data;
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            error.value = `Błąd przy tworzeniu planu: ${message}`;
+            error.value = `Blad przy tworzeniu layoutu: ${message}`;
             console.error(err);
             throw err;
         } finally {
@@ -82,9 +85,7 @@ export const useLayoutStore = defineStore('layout', () => {
         loading.value = true;
         error.value = null;
         try {
-            const response = await layoutApi.updateLayout(currentLayout.value.id, {
-                layout_data: layoutData
-            });
+            const response = await layoutApi.saveLayoutData(currentLayout.value.id, layoutData);
             currentLayout.value = response.data;
             const index = layouts.value.findIndex(l => l.id === response.data.id);
             if (index >= 0) {
@@ -92,30 +93,9 @@ export const useLayoutStore = defineStore('layout', () => {
             }
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            error.value = `Błąd przy zapisywaniu planu: ${message}`;
+            error.value = `Blad przy zapisywaniu layoutu: ${message}`;
             console.error(err);
             throw err;
-        } finally {
-            loading.value = false;
-        }
-    };
-
-    const updateLayoutName = async (id: number, name: string) => {
-        loading.value = true;
-        error.value = null;
-        try {
-            const response = await layoutApi.updateLayout(id, { name });
-            const index = layouts.value.findIndex(l => l.id === id);
-            if (index >= 0) {
-                layouts.value[index] = response.data;
-            }
-            if (currentLayout.value?.id === id) {
-                currentLayout.value = response.data;
-            }
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            error.value = `Błąd przy aktualizacji nazwy: ${message}`;
-            console.error(err);
         } finally {
             loading.value = false;
         }
@@ -132,7 +112,7 @@ export const useLayoutStore = defineStore('layout', () => {
             }
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            error.value = `Błąd przy usuwaniu planu: ${message}`;
+            error.value = `Blad przy usuwaniu layoutu: ${message}`;
             console.error(err);
             throw err;
         } finally {
@@ -167,7 +147,6 @@ export const useLayoutStore = defineStore('layout', () => {
         fetchLayout,
         createLayout,
         saveLayout,
-        updateLayoutName,
         deleteLayout,
         selectLayout,
         clearError
