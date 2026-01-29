@@ -4,8 +4,9 @@
  */
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { analyzerApi, type AnalysisReport, type POICategoryStats } from '@/api/analyzerApi';
+import { analyzerApi, type AnalysisReport, type POICategoryStats, type TrafficAnalysis } from '@/api/analyzerApi';
 import ToggleSwitch from 'primevue/toggleswitch';
+import Galleria from 'primevue/galleria';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -59,10 +60,16 @@ const categoryVisibility = ref<Record<string, boolean>>({
   transport: true,
   education: true,
   health: true,
+  nature: true,
   leisure: true,
   food: true,
   finance: true,
 });
+
+// Watch visibility changes to update map
+watch(categoryVisibility, () => {
+  updateMapMarkers();
+}, { deep: true });
 
 // Toggle category visibility
 function toggleCategoryVisibility(category: string) {
@@ -121,8 +128,45 @@ const scoreLabel = computed(() => {
   if (score >= 70) return 'Bardzo dobra';
   if (score >= 50) return 'Dobra';
   if (score >= 30) return 'Przeciętna';
+  if (score >= 30) return 'Przeciętna';
   return 'Słaba';
 });
+
+const trafficInfo = computed<TrafficAnalysis | null>(() => {
+  return (report.value?.neighborhood?.details?.traffic as TrafficAnalysis) || null;
+});
+
+const trafficSeverity = computed(() => {
+  const level = trafficInfo.value?.level;
+  if (level === 'Low') return 'success';
+  if (level === 'Moderate') return 'warn';
+  if (level === 'High') return 'danger';
+  if (level === 'Extreme') return 'danger'; 
+  return 'secondary';
+});
+
+// Gallery State
+const displayGallery = ref(false);
+const activeImageIndex = ref(0);
+const responsiveOptions = ref([
+    {
+        breakpoint: '1024px',
+        numVisible: 5
+    },
+    {
+        breakpoint: '768px',
+        numVisible: 3
+    },
+    {
+        breakpoint: '560px',
+        numVisible: 1
+    }
+]);
+
+function openGallery(index: number) {
+    activeImageIndex.value = index;
+    displayGallery.value = true;
+}
 
 // Methods
 function goBack() {
@@ -157,18 +201,7 @@ function formatPricePerSqm(price: number | null): string {
   }).format(price) + '/m²';
 }
 
-function getCategoryIcon(category: string): string {
-  const icons: Record<string, string> = {
-    shops: 'pi-shopping-cart',
-    transport: 'pi-car',
-    education: 'pi-book',
-    health: 'pi-heart',
-    leisure: 'pi-sun',
-    food: 'pi-shopping-bag',
-    finance: 'pi-wallet',
-  };
-  return icons[category] || 'pi-map-marker';
-}
+
 
 function getCategoryName(category: string): string {
   const names: Record<string, string> = {
@@ -176,22 +209,38 @@ function getCategoryName(category: string): string {
     transport: 'Transport',
     education: 'Edukacja',
     health: 'Zdrowie',
-    leisure: 'Rekreacja',
+    nature: 'Zieleń',
+    leisure: 'Sport',
     food: 'Gastronomia',
     finance: 'Finanse',
   };
   return names[category] || category;
 }
 
+function getCategoryIcon(category: string): string {
+  const icons: Record<string, string> = {
+    shops: 'pi-shopping-cart',
+    transport: 'pi-car',
+    education: 'pi-book',
+    health: 'pi-heart',
+    nature: 'pi-sun',
+    leisure: 'pi-stopwatch',
+    food: 'pi-apple',
+    finance: 'pi-wallet',
+  };
+  return icons[category] || 'pi-map-marker';
+}
+
 function getCategoryColor(category: string): string {
   const colors: Record<string, string> = {
-    shops: '#8B5CF6',      // violet
-    transport: '#3B82F6',  // blue
-    education: '#F59E0B',  // amber
-    health: '#EF4444',     // red
-    leisure: '#10B981',    // emerald
-    food: '#F97316',       // orange
-    finance: '#6366F1',    // indigo
+    shops: '#F59E0B',      // amber-500
+    transport: '#3B82F6',  // blue-500
+    education: '#8B5CF6',  // violet-500
+    health: '#EF4444',     // red-500
+    nature: '#10B981',     // emerald-500 (Zieleń)
+    leisure: '#F97316',    // orange-500 (Sport)
+    food: '#EC4899',       // pink-500
+    finance: '#64748B',    // slate-500
   };
   return colors[category] || '#6B7280';
 }
@@ -465,14 +514,15 @@ onMounted(async () => {
         
         <div class="flex flex-wrap justify-between items-start gap-4">
           <div class="flex-1 min-w-0">
-            <Button icon="pi pi-arrow-left" text rounded @click="goBack" class="mb-3 !-ml-2" />
-            <h1 class="text-2xl md:text-3xl font-bold text-surface-900 dark:text-surface-100 mb-2">
-              {{ report!.listing.title || 'Analiza ogłoszenia' }}
-            </h1>
-            <p v-if="report!.listing.location" class="flex items-center gap-2 text-surface-500">
-              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900">
-                <i class="pi pi-map-marker text-primary-500 text-sm"></i>
-              </span>
+            <div class="flex items-center gap-2 mb-2">
+                <Button icon="pi pi-arrow-left" text rounded @click="goBack" class="!-ml-2 flex-shrink-0" />
+                <h1 class="text-xl md:text-2xl font-bold text-surface-900 dark:text-surface-100 leading-tight">
+                  {{ report!.listing.title || 'Analiza ogłoszenia' }}
+                </h1>
+            </div>
+            
+            <p v-if="report!.listing.location" class="flex items-center gap-2 text-sm text-surface-500 font-medium ml-1">
+              <i class="pi pi-map-marker text-primary-500"></i>
               {{ report!.listing.location }}
             </p>
           </div>
@@ -515,7 +565,7 @@ onMounted(async () => {
             </div>
             <div>
               <h3 class="font-bold text-lg text-surface-800 dark:text-surface-100">Plusy</h3>
-              <p class="text-sm text-emerald-600 dark:text-emerald-400">{{ report!.tldr.pros.length }} zalet</p>
+              <p class="text-sm text-dark">{{ report!.tldr.pros.length }} zalet</p>
             </div>
           </div>
           
@@ -539,7 +589,7 @@ onMounted(async () => {
             </div>
             <div>
               <h3 class="font-bold text-lg text-surface-800 dark:text-surface-100">Potencjalne ryzyka</h3>
-              <p class="text-sm text-orange-600 dark:text-orange-400">{{ report!.tldr.cons.length }} uwag</p>
+              <p class="text-sm text-dark">{{ report!.tldr.cons.length }} uwag</p>
             </div>
           </div>
           
@@ -600,61 +650,120 @@ onMounted(async () => {
         <div v-if="report!.listing.images?.length">
           <h4 class="font-semibold mb-3 text-surface-700 dark:text-surface-200 flex items-center gap-2">
             <i class="pi pi-images text-primary-500"></i>
-            Zdjęcia
+            Zdjęcia ({{ report!.listing.images.length }})
           </h4>
-          <div class="flex gap-3 overflow-x-auto pb-2">
-            <img 
-              v-for="(img, idx) in report!.listing.images.slice(0, 6)" 
+          
+          <div class="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
+            <div 
+              v-for="(img, idx) in report!.listing.images" 
               :key="idx"
-              :src="img"
-              class="h-28 w-44 rounded-xl object-cover shadow-md hover:shadow-xl hover:scale-105 transition-all cursor-pointer"
-              loading="lazy"
-            />
+              class="relative flex-shrink-0 cursor-pointer group"
+              @click="openGallery(idx)"
+            >
+              <img 
+                :src="img"
+                class="h-32 w-48 rounded-xl object-cover shadow-md group-hover:shadow-xl group-hover:scale-105 transition-all duration-300 border border-surface-100 dark:border-surface-700"
+                loading="lazy"
+              />
+              <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 rounded-xl transition-colors duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <i class="pi pi-search-plus text-white text-2xl drop-shadow-md"></i>
+              </div>
+            </div>
           </div>
+
+          <Galleria
+            v-model:visible="displayGallery"
+            v-model:activeIndex="activeImageIndex"
+            :value="report!.listing.images"
+            :responsiveOptions="responsiveOptions"
+            :numVisible="7"
+            containerStyle="max-width: 850px"
+            :circular="true"
+            :fullScreen="true"
+            :showItemNavigators="true"
+            :showThumbnails="true"
+          >
+            <template #item="slotProps">
+                <img :src="slotProps.item" style="width: 100%; display: block; max-height: 85vh; object-fit: contain;" />
+            </template>
+            <template #thumbnail="slotProps">
+                <img :src="slotProps.item" style="width: 100px; height: 60px; object-fit: cover; display: block;" />
+            </template>
+          </Galleria>
         </div>
       </div>
       
       <!-- Okolica -->
-      <Card>
-        <template #title>
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <i class="pi pi-map"></i>
-              <span>Okolica</span>
+      <div class="relative bg-gradient-to-br from-white to-surface-50 dark:from-surface-800 dark:to-surface-900 rounded-2xl p-6 shadow-lg border border-surface-100 dark:border-surface-700 overflow-hidden">
+        <!-- Decoration -->
+        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary-400 via-primary-500 to-primary-600"></div>
+
+        <div class="flex items-center justify-between mb-8">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-lg">
+              <i class="pi pi-map text-xl text-dark"></i>
             </div>
-            <div v-if="report!.neighborhood.has_location" class="flex items-center gap-2">
-              <span class="text-sm text-surface-500">Ocena:</span>
-              <Tag 
-                :value="`${Math.round(report!.neighborhood.score || 0)}/100 - ${scoreLabel}`"
-                :severity="scoreColor"
-                class="text-lg"
-              />
+            <div>
+              <h2 class="text-xl font-bold text-surface-800 dark:text-surface-100">
+                Okolica
+              </h2>
+              <p class="text-sm text-surface-500">Analiza lokalizacji i punktów POI</p>
             </div>
           </div>
-        </template>
-        <template #content>
+          
+          <div v-if="report!.neighborhood.has_location" class="flex items-center gap-3 bg-white/50 dark:bg-surface-800/50 px-4 py-2 rounded-xl border border-surface-200 dark:border-surface-700 shadow-sm">
+            <span class="text-sm font-medium text-surface-600 dark:text-surface-300">Ocena lokalizacji:</span>
+            <Tag 
+              :value="`${Math.round(report!.neighborhood.score || 0)}/100`"
+              :severity="scoreColor"
+              class="!text-sm !px-3"
+            />
+          </div>
+
+          <div v-if="trafficInfo" class="flex items-center gap-3 bg-white/50 dark:bg-surface-800/50 px-4 py-2 rounded-xl border border-surface-200 dark:border-surface-700 shadow-sm" :title="trafficInfo.description">
+            <span class="text-sm font-medium text-surface-600 dark:text-surface-300">Ruch uliczny:</span>
+            <Tag 
+              :value="trafficInfo.label"
+              :severity="trafficSeverity"
+              class="!text-sm !px-3"
+            />
+          </div>
+        </div>
+
+        <div>
           <!-- Brak lokalizacji -->
-          <div v-if="!report!.neighborhood.has_location" class="text-center py-8">
-            <i class="pi pi-map-marker text-4xl text-surface-400 mb-4"></i>
-            <p class="text-surface-500">
-              Brak dokładnej lokalizacji - analiza okolicy jest ograniczona.
+          <div v-if="!report!.neighborhood.has_location" class="text-center py-12">
+            <div class="w-20 h-20 mx-auto bg-surface-100 dark:bg-surface-800 rounded-full flex items-center justify-center mb-4">
+              <i class="pi pi-map-marker text-3xl text-surface-400"></i>
+            </div>
+            <h3 class="text-lg font-medium text-surface-900 dark:text-surface-100 mb-2">Brak dokładnej lokalizacji</h3>
+            <p class="text-surface-500 max-w-md mx-auto">
+              Nie udało się ustalić dokładnego adresu nieruchomości, dlatego analiza okolicy jest ograniczona.
             </p>
           </div>
           
           <!-- Analiza okolicy -->
           <div v-else>
-            <p class="mb-4">{{ report!.neighborhood.summary }}</p>
+            <div class="bg-surface-50/50 dark:bg-surface-800/30 rounded-2xl p-6 mb-8 border border-surface-100 dark:border-surface-700/50">
+              <p class="text-lg leading-relaxed text-surface-700 dark:text-surface-300">
+                {{ report!.neighborhood.summary }}
+              </p>
+            </div>
             
             <!-- Map Type Selector -->
-            <div class="flex items-center gap-4 mb-4">
-              <span class="text-sm text-surface-500">Typ mapy:</span>
-              <SelectButton 
-                v-model="selectedMapType" 
-                :options="mapTypeOptions" 
-                optionLabel="label" 
-                optionValue="value"
-                :allowEmpty="false"
-              />
+            <div class="flex items-center justify-between mb-6">
+              <h3 class="text-lg font-bold text-surface-900 dark:text-surface-100">Mapa okolicy</h3>
+              <div class="flex items-center gap-3">
+                <span class="text-sm font-medium text-surface-500">Widok:</span>
+                <SelectButton 
+                  v-model="selectedMapType" 
+                  :options="mapTypeOptions" 
+                  optionLabel="label" 
+                  optionValue="value"
+                  :allowEmpty="false"
+                  class="!shadow-none scale-90"
+                />
+              </div>
             </div>
             
             <!-- Google Maps Error -->
@@ -765,11 +874,11 @@ onMounted(async () => {
               </div>
             </div>
           </div>
-        </template>
-      </Card>
-    </div>
+      </div>
     </div>
   </div>
+  </div>
+</div>
 </template>
 
 <style scoped>

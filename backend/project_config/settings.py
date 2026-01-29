@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,12 +22,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-s)gi7yl!!2k97nf5y+-+2l!q8hivbn@5f7wz(%%uqkm(6ux8(o'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-only-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# Allowed hosts from environment (comma-separated)
+ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
 
 # Application definition
@@ -45,8 +48,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # MUST be before CommonMiddleware
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Static files in production
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -78,10 +82,11 @@ WSGI_APPLICATION = 'project_config.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default='sqlite:///db.sqlite3',
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 
@@ -120,7 +125,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'static'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files (User uploads)
 MEDIA_URL = 'media/'
@@ -138,19 +144,58 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ],
+    ] + (['rest_framework.renderers.BrowsableAPIRenderer'] if DEBUG else []),
 }
 
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
+    origin.strip() for origin in os.getenv(
+        'CORS_ORIGINS',
+        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000'
+    ).split(',') if origin.strip()
 ]
 
-ALLOWED_HOSTS = ['*']
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
+# Allow all origins (development) - disable in production via env var
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL', 'True').lower() in ('true', '1', 'yes')
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+# Security settings for production
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'listing_analyzer': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+    },
+}

@@ -1,45 +1,37 @@
 """
 Klient do Overpass API (OpenStreetMap).
+Wersja zoptymalizowana: Single Batch Request (jedno zapytanie zamiast 8).
 """
-import logging
-from typing import Optional, List, Dict, Any
-from dataclasses import dataclass, field
-
 import requests
-
-logger = logging.getLogger(__name__)
-
+import time
+import math
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Any
 
 @dataclass
 class POI:
-    """Point of Interest z OSM."""
-    osm_type: str  # node, way, relation
-    osm_id: int
+    lat: float
+    lon: float
     name: str
     category: str
     subcategory: str
-    lat: float
-    lon: float
-    distance_m: Optional[float] = None
-    tags: Dict[str, str] = field(default_factory=dict)
-
+    distance_m: float
+    tags: dict
 
 class OverpassClient:
-    """
-    Klient do pobierania POI z Overpass API.
-    Używa darmowego API, więc należy być ostrożnym z rate-limitami.
-    """
+    """Klient do pobierania danych z OSM."""
     
-    # Publiczne endpointy Overpass API
+    # Lista publicznych instancji Overpass API (Load Balancer)
     ENDPOINTS = [
         "https://overpass-api.de/api/interpreter",
         "https://lz4.overpass-api.de/api/interpreter",
+        "https://z.overpass-api.de/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter", 
     ]
     
-    # Timeout dla requestów
-    TIMEOUT = 30
+    TIMEOUT = 60 # Zwiększony timeout dla dużego zapytania
     
-    # Kategorie POI do wyszukiwania
+    # Konfiguracja kategorii (zachowujemy strukturę dla subkategorii i nazw)
     POI_QUERIES = {
         'shops': {
             'query': '["shop"]',
@@ -49,6 +41,24 @@ class OverpassClient:
                 'convenience': 'Sklep spożywczy',
                 'mall': 'Centrum handlowe',
                 'bakery': 'Piekarnia',
+                'clothes': 'Sklep odzieżowy',
+                'hairdresser': 'Fryzjer',
+                'beauty': 'Kosmetyczka',
+                'kiosk': 'Kiosk',
+                'alcohol': 'Sklep monopolowy',
+                'florist': 'Kwiaciarnia',
+                'greengrocer': 'Warzywniak',
+                'butcher': 'Rzeźnik',
+                'car_repair': 'Warsztat samochodowy',
+                'doityourself': 'Sklep budowlany',
+                'drugstore': 'Drogeria',
+                'books': 'Księgarnia',
+                'electronics': 'Elektronika',
+                'shoes': 'Obuwie',
+                'furniture': 'Meble',
+                'jewelry': 'Jubiler',
+                'optician': 'Optyk',
+                'gift': 'Upominki',
             }
         },
         'transport': {
@@ -84,13 +94,36 @@ class OverpassClient:
                 'clinic': 'Przychodnia',
             }
         },
-        'leisure': {
-            'query': '["leisure"~"park|playground|fitness_centre"]',
-            'name': 'Rekreacja',
+        'nature': {
+            'query': '["leisure"~"park|garden|nature_reserve"]',
+            'alt_queries': [
+                '["landuse"~"forest|meadow|grass|recreation_ground"]',
+                '["natural"~"wood|water|beach"]',
+            ],
+            'name': 'Zieleń i Wypoczynek',
             'subcategories': {
                 'park': 'Park',
+                'garden': 'Ogród',
+                'nature_reserve': 'Rezerwat przyrody',
+                'forest': 'Las',
+                'wood': 'Las',
+                'meadow': 'Łąka',
+                'water': 'Woda',
+                'beach': 'Plaża',
+                'grass': 'Trawnik',
+                'recreation_ground': 'Teren rekreacyjny',
+            }
+        },
+        'leisure': {
+            'query': '["leisure"~"playground|fitness_centre|pitch|sports_centre|stadium|swimming_pool"]',
+            'name': 'Sport i Rekreacja',
+            'subcategories': {
                 'playground': 'Plac zabaw',
                 'fitness_centre': 'Siłownia',
+                'pitch': 'Boisko',
+                'sports_centre': 'Centrum sportowe',
+                'stadium': 'Stadion',
+                'swimming_pool': 'Basen',
             }
         },
         'food': {
@@ -108,6 +141,22 @@ class OverpassClient:
             'subcategories': {
                 'bank': 'Bank',
                 'atm': 'Bankomat',
+            }
+        },
+        'roads': {
+            'query': '["highway"~"motorway|trunk|primary|secondary|tertiary"]',
+            'alt_queries': [
+                '["railway"~"tram|rail"]'
+            ],
+            'name': 'Ruch drogowy',
+            'subcategories': {
+                'motorway': 'Autostrada',
+                'trunk': 'Droga ekspresowa',
+                'primary': 'Droga główna',
+                'secondary': 'Droga wojewódzka',
+                'tertiary': 'Droga powiatowa',
+                'tram': 'Tramwaj',
+                'rail': 'Kolej',
             }
         },
     }
@@ -128,145 +177,216 @@ class OverpassClient:
         radius_m: int = 500
     ) -> Dict[str, List[POI]]:
         """
-        Pobiera wszystkie POI w promieniu od punktu.
-        
-        Args:
-            lat: Szerokość geograficzna
-            lon: Długość geograficzna
-            radius_m: Promień w metrach (domyślnie 500m)
-        
-        Returns:
-            Słownik {kategoria: [lista POI]}
+        Pobiera punkty POI w okolicy (Single Batch Request).
+        Wysyła jedno duże zapytanie zamiast wielu małych.
         """
-        results: Dict[str, List[POI]] = {}
         
-        for category, config in self.POI_QUERIES.items():
-            try:
-                pois = self._query_category(lat, lon, radius_m, category, config)
-                if pois:
-                    results[category] = pois
-            except Exception as e:
-                logger.warning(f"Błąd pobierania kategorii {category}: {e}")
-                results[category] = []
-        
-        return results
-    
-    def _query_category(
-        self,
-        lat: float,
-        lon: float,
-        radius_m: int,
-        category: str,
-        config: dict
-    ) -> List[POI]:
-        """Wykonuje zapytanie dla jednej kategorii."""
-        
-        # Buduj zapytanie Overpass
-        queries = [config['query']]
-        if 'alt_queries' in config:
-            queries.extend(config['alt_queries'])
-        
-        # Łączone zapytanie dla wszystkich wariantów
+        # 1. Zbuduj wielkie Query (Union)
         union_parts = []
-        for q in queries:
+        
+        for config in self.POI_QUERIES.values():
+            q = config['query']
+            # Używamy node i way (relation pomijamy dla wydajności, chyba że krytyczne)
             union_parts.append(f'node{q}(around:{radius_m},{lat},{lon});')
             union_parts.append(f'way{q}(around:{radius_m},{lat},{lon});')
+            
+            for alt_q in config.get('alt_queries', []):
+                union_parts.append(f'node{alt_q}(around:{radius_m},{lat},{lon});')
+                union_parts.append(f'way{alt_q}(around:{radius_m},{lat},{lon});')
         
         overpass_query = f"""
-        [out:json][timeout:25];
+        [out:json][timeout:{self.TIMEOUT}];
         (
             {' '.join(union_parts)}
         );
         out center;
         """
         
-        # Wykonaj request
-        try:
-            response = requests.post(
-                self._get_endpoint(),
-                data={'data': overpass_query},
-                timeout=self.TIMEOUT,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'}
-            )
-            response.raise_for_status()
-        except requests.RequestException as e:
-            self._rotate_endpoint()
-            raise RuntimeError(f"Błąd Overpass API: {e}")
+        # 2. Wyślij request (z Retry Logic)
+        elements = []
+        max_retries = 3
         
-        data = response.json()
-        elements = data.get('elements', [])
+        for attempt in range(max_retries):
+            try:
+                # print(f"DEBUG: Wysyłam Batch Request do {self._get_endpoint()} (próba {attempt+1})")
+                response = requests.post(
+                    self._get_endpoint(),
+                    data={'data': overpass_query},
+                    timeout=self.TIMEOUT * (attempt + 1),
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                elements = data.get('elements', [])
+                break # Sukces
+                
+            except (requests.RequestException, ValueError) as e:
+                print(f"WARN: Batch Request failed on {self._get_endpoint()}: {e}")
+                self._rotate_endpoint()
+                time.sleep(1)
+                
+                if attempt == max_retries - 1:
+                    print("ERROR: Wszystkie próby pobrania danych nie powiodły się.")
+                    # Zwracamy puste wyniki (fail gracefully)
+                    return {cat: [] for cat in self.POI_QUERIES}
+
+        # 3. Klasyfikuj i Parsuj wyniki lokalnie
+        pois_by_category = {cat: [] for cat in self.POI_QUERIES}
         
-        pois = []
+        # Cache przetworzonych id, żeby nie dublować (node może być częścią way, ale tu dostajemy node i way osobno z query)
+        # Overpass 'out center' zwraca geometrię way jako center, więc jest ok.
+        
         for elem in elements:
-            poi = self._parse_element(elem, category, config, lat, lon)
-            if poi:
-                pois.append(poi)
+            tags = elem.get('tags', {})
+            if not tags: continue
+            
+            # Pobierz koordynaty raz
+            elem_lat = elem.get('lat') or elem.get('center', {}).get('lat')
+            elem_lon = elem.get('lon') or elem.get('center', {}).get('lon')
+            if not elem_lat: continue
+            
+            # Dopasuj kategorie
+            matched_cats = self._match_categories(tags)
+            
+            for cat in matched_cats:
+                poi = self._create_poi(elem, tags, cat, elem_lat, elem_lon, lat, lon)
+                if poi:
+                    pois_by_category[cat].append(poi)
         
-        # Sortuj po odległości
-        pois.sort(key=lambda p: p.distance_m or 999999)
+        # 4. Sortuj wynikowe listy
+        for cat in pois_by_category:
+            pois_by_category[cat].sort(key=lambda p: p.distance_m)
+            
+        return pois_by_category
+
+    def _match_categories(self, tags: dict) -> List[str]:
+        """Sprawdza, do jakich kategorii pasuje dany obiekt na podstawie tagów."""
+        matches = []
         
-        return pois
-    
-    def _parse_element(
-        self,
-        elem: dict,
-        category: str,
-        config: dict,
-        ref_lat: float,
-        ref_lon: float
-    ) -> Optional[POI]:
-        """Parsuje element OSM do POI."""
-        tags = elem.get('tags', {})
+        # Shops
+        if 'shop' in tags:
+            matches.append('shops')
+            
+        # Transport (public_transport=stop_position OR highway=bus_stop OR railway=tram_stop/station)
+        if (tags.get('public_transport') == 'stop_position' or 
+            tags.get('highway') == 'bus_stop' or 
+            tags.get('railway') in ['tram_stop', 'station']):
+            matches.append('transport')
+            
+        # Education (amenity ~ school|kindergarten|university)
+        amenity = tags.get('amenity', '')
+        if amenity in ['school', 'kindergarten', 'university']:
+            matches.append('education')
+            
+        # Health (amenity ~ pharmacy|doctors|hospital|clinic)
+        if amenity in ['pharmacy', 'doctors', 'hospital', 'clinic']:
+            matches.append('health')
+            
+        # Nature (leisure ~ park|garden|nature_reserve OR landuse ~ ...)
+        leisure = tags.get('leisure', '')
+        landuse = tags.get('landuse', '')
+        natural = tags.get('natural', '')
         
-        # Pobierz współrzędne (dla way/relation użyj center)
-        if 'center' in elem:
-            lat = elem['center']['lat']
-            lon = elem['center']['lon']
-        elif 'lat' in elem and 'lon' in elem:
-            lat = elem['lat']
-            lon = elem['lon']
-        else:
-            return None
+        if (leisure in ['park', 'garden', 'nature_reserve'] or
+            landuse in ['forest', 'meadow', 'grass', 'recreation_ground'] or
+            natural in ['wood', 'water', 'beach']):
+            matches.append('nature')
+            
+        # Leisure (playground, fitness, pitch, etc)
+        if leisure in ['playground', 'fitness_centre', 'pitch', 'sports_centre', 'stadium', 'swimming_pool']:
+            matches.append('leisure')
+            
+        # Food
+        if amenity in ['restaurant', 'cafe', 'fast_food']:
+            matches.append('food')
+            
+        # Finance
+        if amenity in ['bank', 'atm']:
+            matches.append('finance')
+            
+        # Roads (highway ~ motorway... OR railway ~ tram|rail)
+        highway = tags.get('highway', '')
+        railway = tags.get('railway', '')
+        if (highway in ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'] or
+            railway in ['tram', 'rail']):
+            matches.append('roads')
+            
+        return matches
+
+    def _create_poi(self, elem: dict, tags: dict, category: str, 
+                    lat: float, lon: float, ref_lat: float, ref_lon: float) -> Optional[POI]:
+        """Tworzy obiekt POI dla danej kategorii."""
+        config = self.POI_QUERIES.get(category, {})
         
         # Nazwa
-        name = tags.get('name', tags.get('brand', 'Bez nazwy'))
+        name = tags.get('name', tags.get('brand'))
         
-        # Subkategoria
+        # Subkategoria dla tej konkretnej kategorii
         subcategory = ''
-        for key in ['amenity', 'shop', 'leisure', 'public_transport', 'highway', 'railway']:
-            if key in tags:
-                subcategory = tags[key]
-                break
         
-        # Oblicz odległość
+        # Logika wyboru subkategorii specyficzna dla kategorii
+        if category == 'shops':
+            subcategory = tags.get('shop', '')
+        elif category == 'transport':
+            if tags.get('highway') == 'bus_stop': subcategory = 'bus_stop'
+            elif tags.get('railway') == 'tram_stop': subcategory = 'tram_stop'
+            elif tags.get('railway') == 'station': subcategory = 'station'
+            else: subcategory = tags.get('public_transport', '')
+        elif category == 'education':
+            subcategory = tags.get('amenity', '')
+        elif category == 'health':
+            subcategory = tags.get('amenity', '')
+        elif category == 'nature':
+            # Priorytet: leisure > landuse > natural
+            subcategory = tags.get('leisure') or tags.get('landuse') or tags.get('natural', '')
+        elif category == 'leisure':
+            subcategory = tags.get('leisure', '')
+        elif category == 'food':
+            subcategory = tags.get('amenity', '')
+        elif category == 'finance':
+            subcategory = tags.get('amenity', '')
+        elif category == 'roads':
+            subcategory = tags.get('highway') or tags.get('railway', '')
+            
+        # Tłumaczenie subkategorii
+        subcategory_pl = config.get('subcategories', {}).get(subcategory)
+        
+        # Fallback formatowania
+        if not subcategory_pl:
+            subcategory_pl = subcategory.replace('_', ' ').capitalize()
+        
+        # Fallback nazwy
+        if not name:
+            # DEBUG: Loguj (z filtrem spamu)
+            is_spam = (category == 'nature' and subcategory in ['grass', 'water', 'meadow', 'forest', 'wood', 'basin', 'garden']) or \
+                      (category == 'roads' and subcategory in ['tram', 'rail'])
+            if not is_spam:
+                print(f"DEBUG: Nameless POI found | Category: {category} | Type: {subcategory} | Tags: {tags}")
+            
+            if subcategory_pl:
+                name = subcategory_pl.capitalize()
+            else:
+                name = "Obiekt bez nazwy"
+
         distance = self._haversine_distance(ref_lat, ref_lon, lat, lon)
         
         return POI(
-            osm_type=elem.get('type', 'node'),
-            osm_id=elem.get('id', 0),
+            lat=lat,
+            lon=lon,
             name=name,
             category=category,
             subcategory=subcategory,
-            lat=lat,
-            lon=lon,
-            distance_m=distance,
+            distance_m=round(distance),
             tags=tags
         )
-    
-    @staticmethod
-    def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """Oblicza odległość w metrach między dwoma punktami (wzór Haversine)."""
-        import math
-        
-        R = 6371000  # Promień Ziemi w metrach
-        
-        lat1_rad = math.radians(lat1)
-        lat2_rad = math.radians(lat2)
-        delta_lat = math.radians(lat2 - lat1)
-        delta_lon = math.radians(lon2 - lon1)
-        
-        a = (math.sin(delta_lat / 2) ** 2 +
-             math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon / 2) ** 2)
+
+    def _haversine_distance(self, lat1, lon1, lat2, lon2):
+        R = 6371000
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        a = math.sin(dphi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        
         return R * c

@@ -12,6 +12,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(false);
   const user = ref<{ id: number; email: string; name: string } | null>(null);
   const accessToken = ref<string | null>(null);
+  const refreshToken = ref<string | null>(null);
 
   // Getters
   const userName = computed(() => user.value?.name || 'Gość');
@@ -39,8 +40,10 @@ export const useAuthStore = defineStore('auth', () => {
   async function logout() {
     user.value = null;
     accessToken.value = null;
+    refreshToken.value = null;
     isLoggedIn.value = false;
     localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
   }
 
   async function fetchUser() {
@@ -53,6 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     user,
     accessToken,
+    refreshToken,
     // Getters
     userName,
     userEmail,

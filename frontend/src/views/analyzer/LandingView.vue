@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * Landing View - strona główna z formularzem analizy
+ * Loktis - Landing View - strona główna z formularzem analizy
+ * loktis.pl - Inteligentna analiza ogłoszeń nieruchomości
  */
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
@@ -159,13 +160,16 @@ loadRecentAnalyses();
         <!-- Logo/Title with gradient -->
         <div class="text-center mb-10">
           <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 shadow-xl mb-6">
-            <i class="pi pi-home text-4xl text-white"></i>
+            <i class="pi pi-map-marker text-4xl text-white"></i>
           </div>
           <h1 class="text-5xl font-extrabold mb-4 bg-gradient-to-r from-primary-600 via-primary-500 to-primary-400 bg-clip-text text-transparent">
-            Analizator Ogłoszeń
+            Loktis
           </h1>
-          <p class="text-xl text-surface-500 max-w-2xl mx-auto">
-            Wklej link do ogłoszenia i sprawdź, czy warto się nim zainteresować
+          <p class="text-lg text-surface-600 dark:text-surface-300 font-medium mb-2">
+            Inteligentna analiza ogłoszeń nieruchomości
+          </p>
+          <p class="text-base text-surface-500 max-w-2xl mx-auto">
+            Wklej link do ogłoszenia z Otodom lub OLX i poznaj szczegółową ocenę okolicy
           </p>
         </div>
         
@@ -357,7 +361,8 @@ loadRecentAnalyses();
     
     <!-- Footer -->
     <div class="text-center p-6 text-sm text-surface-400">
-      <p>Dane pochodzą z OpenStreetMap • Analiza ma charakter poglądowy</p>
+      <p class="font-medium text-primary-500">loktis.pl</p>
+      <p class="mt-1">Dane pochodzą z OpenStreetMap • Analiza ma charakter poglądowy</p>
     </div>
   </div>
 </template>

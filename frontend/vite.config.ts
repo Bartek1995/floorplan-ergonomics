@@ -19,8 +19,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: isProd ? PROD_BASE : DEV_BASE,
-    // Load .env from project root (parent directory)
-    envDir: '..',
+    // Load .env from frontend directory
+    envDir: '.',
     plugins: [
       VueRouter({
         dts: "src/typed-router.d.ts",

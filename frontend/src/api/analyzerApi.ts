@@ -3,8 +3,8 @@
  */
 import axios, { type AxiosInstance, type AxiosError } from 'axios';
 
-// Konfiguracja bazowa
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+// Konfiguracja bazowa - używamy /api bo Vite proxy przekierowuje do backendu
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -50,16 +50,24 @@ export interface POICategoryStats {
   items: POIItem[];
 }
 
+export interface CategoryScoreDetails {
+  count: number;
+  nearest_m: number | null;
+  names: string[];
+  rating: string;
+}
+
+export interface TrafficAnalysis {
+  level: 'Low' | 'Moderate' | 'High' | 'Extreme';
+  label: string;
+  description: string;
+}
+
 export interface NeighborhoodData {
   has_location: boolean;
   score: number | null;
   summary: string;
-  details: Record<string, {
-    count: number;
-    nearest_m: number | null;
-    names: string[];
-    rating: string;
-  }>;
+  details: Record<string, CategoryScoreDetails | TrafficAnalysis | any>;
   poi_stats: Record<string, POICategoryStats>;
   markers: Array<{
     lat: number;

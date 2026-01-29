@@ -1,4 +1,4 @@
-# Instrukcje dla Asystenta AI - Analizator Ogloszen
+# Instrukcje dla Asystenta AI - Loktis
 
 ## Django 5.2 + Django REST Framework + Vue 3 + TypeScript + PrimeVue
 
@@ -8,7 +8,7 @@
 
 ## 0. Cel aplikacji
 
-Analizator Ogloszen Nieruchomosci - MVP do szybkiej analizy ogloszen mieszkaniowych.
+Loktis - Aplikacja do szybkiej analizy ogloszen mieszkaniowych z ocena okolicy. (loktis.pl)
 
 ### Flow uzytkownika
 
@@ -75,13 +75,28 @@ npm run dev
 
 ## 4. Zasady stylowania (Frontend)
 
-- Uzywaj TYLKO komponentow PrimeVue
-- Tailwind tylko do layoutu (grid, flex, gap)
-- NIE dodawaj recznych kolorow (bg-*, text-*)
+- Uzywaj **PrimeVue** dla komponentow interaktywnych.
+- Uzywaj **Tailwind CSS** do layoutu, typografii i kolorow (bg-*, text-*).
+- Zachowuj spojnosc wizualna (gradienty, zaokraglenia) zgodna z `ReportView.vue`.
 
 ---
 
-## 5. Dodawanie nowego providera
+## 5. Konfiguracja i Zmienne Srodowiskowe
+
+Wymagane zmienne w `.env`:
+- `GEMINI_API_KEY`: Klucz do Google Gemini Vision.
+- `VITE_GOOGLE_MAPS_API_KEY`: Klucz do Google Maps (Frontend).
+- `SECRET_KEY`: (Backend) Klucz bezpieczenstwa Django.
+- `ALLOWED_HOSTS`: (Backend) Domeny produkcyjne.
+
+---
+
+## 6. Dodawanie nowego providera
+
+1. Utworz plik w listing_analyzer/providers/
+2. Dziedzicz po BaseProvider
+3. Zaimplementuj can_handle() i parse()
+4. Dodaj do registry.py
 
 1. Utworz plik w listing_analyzer/providers/
 2. Dziedzicz po BaseProvider

@@ -1,6 +1,6 @@
 {
-    "name": "sakai-vue",
-    "version": "4.2.0",
+    "name": "loktis-frontend",
+    "version": "1.0.0",
     "type": "module",
     "scripts": {
         "dev": "vite",

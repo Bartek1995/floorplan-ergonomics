@@ -266,32 +266,7 @@ class ReportBuilder:
         
         return pros[:3], cons[:3]
     
-    def _generate_markers(self, pois_by_category: Dict[str, list]) -> List[Dict[str, Any]]:
-        """Generuje listę markerów dla mapy."""
-        markers = []
-        
-        category_colors = {
-            'shops': 'blue',
-            'transport': 'red',
-            'education': 'orange',
-            'health': 'red',
-            'leisure': 'green',
-            'food': 'purple',
-            'finance': 'gray',
-        }
-        
-        for category, pois in pois_by_category.items():
-            for poi in pois:
-                markers.append({
-                    'lat': poi.lat,
-                    'lon': poi.lon,
-                    'name': poi.name,
-                    'category': category,
-                    'subcategory': poi.subcategory,
-                    'color': category_colors.get(category, 'gray'),
-                    'distance': round(poi.distance_m) if poi.distance_m else None
-                })
-        return markers
+
     
     def _generate_warnings(self, listing: ListingData) -> List[str]:
         """Generuje ostrzeżenia."""
@@ -326,14 +301,16 @@ class ReportBuilder:
         """Generuje markery POI dla mapy."""
         markers = []
         
+        # Kolory zgodne z frontendem (Tailwind colors)
         category_colors = {
-            'shops': 'blue',
-            'transport': 'red',
-            'education': 'orange',
-            'health': 'pink',
-            'leisure': 'green',
-            'food': 'purple',
-            'finance': 'gray',
+            'shops': '#F59E0B',      # amber-500
+            'transport': '#3B82F6',  # blue-500
+            'education': '#8B5CF6',  # violet-500
+            'health': '#EF4444',     # red-500
+            'nature': '#10B981',     # emerald-500 (Zieleń)
+            'leisure': '#F97316',    # orange-500 (Sport)
+            'food': '#EC4899',       # pink-500
+            'finance': '#64748B',    # slate-500
         }
         
         for category, pois in pois_by_category.items():
@@ -344,7 +321,7 @@ class ReportBuilder:
                     'name': poi.name,
                     'category': category,
                     'subcategory': poi.subcategory,
-                    'color': category_colors.get(category, 'gray'),
+                    'color': category_colors.get(category, '#6B7280'),
                     'distance': round(poi.distance_m) if poi.distance_m else None
                 })
         

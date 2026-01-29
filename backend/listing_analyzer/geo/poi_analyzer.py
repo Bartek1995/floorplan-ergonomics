@@ -38,9 +38,10 @@ class POIAnalyzer:
         'transport': 25,
         'education': 10,
         'health': 15,
-        'leisure': 10,
-        'food': 10,
-        'finance': 10,
+        'nature': 15,     # Nowa kategoria: Zieleń i Wypoczynek
+        'leisure': 5,     # Sport i Rekreacja (zmniejszona waga)
+        'food': 5,        # Zmniejszone o 5
+        'finance': 5,     # Zmniejszone o 5
     }
     
     # Oczekiwana liczba POI dla 100% score w kategorii
@@ -49,6 +50,7 @@ class POIAnalyzer:
         'transport': 3,
         'education': 2,
         'health': 3,
+        'nature': 2,      # Wystarczą 2 parki/lasy blisko
         'leisure': 2,
         'food': 5,
         'finance': 2,
@@ -97,17 +99,19 @@ class POIAnalyzer:
             category_scores=category_scores,
             quiet_score=quiet_score,
             summary=summary,
-            details=details,
+            details={
+                **details,
+                'traffic': self._analyze_traffic(pois_by_category)
+            },
         )
 
     def _calculate_quiet_score(self, pois_by_category: Dict[str, List[POI]]) -> float:
         """Oblicza indeks spokoju (0-100)."""
         score = 60.0 # Baza: umiarkowanie spokojnie
 
-        # Plusy: Parki i zieleń (blisko)
-        leisure = pois_by_category.get('leisure', [])
-        parks = [p for p in leisure if 'park' in p.subcategory or 'park' in p.tags.get('leisure', '')]
-        if any(p.distance_m and p.distance_m <= 400 for p in parks):
+        # Plusy: Zieleń i Wypoczynek (blisko)
+        nature = pois_by_category.get('nature', [])
+        if any(p.distance_m and p.distance_m <= 400 for p in nature):
             score += 20
         
         # Minusy: Transport (hałas uliczny)
@@ -133,7 +137,54 @@ class POIAnalyzer:
         if any(p.distance_m and p.distance_m <= 100 for p in schools):
             score -= 10
 
+        # Minusy: Ruch drogowy (autostrady, główne drogi, tory)
+        roads = pois_by_category.get('roads', [])
+        
+        # Ciężki ruch (Autostrady, Ekspresówki) - bardzo głośno i daleko niesie
+        heavy_traffic = [p for p in roads if p.subcategory in ['motorway', 'trunk']]
+        if any(p.distance_m and p.distance_m <= 300 for p in heavy_traffic):
+            score -= 40
+        elif any(p.distance_m and p.distance_m <= 600 for p in heavy_traffic):
+            score -= 20
+            
+        # Średni/Duży ruch (Główne drogi miejskie)
+        primary = [p for p in roads if p.subcategory == 'primary']
+        if any(p.distance_m and p.distance_m <= 100 for p in primary):
+            score -= 30
+        elif any(p.distance_m and p.distance_m <= 250 for p in primary):
+            score -= 15
+            
+        # Tory (Tramwaj, Kolej)
+        rails = [p for p in roads if p.subcategory in ['tram', 'rail']]
+        if any(p.distance_m and p.distance_m <= 80 for p in rails):
+            score -= 15
+
         return max(0.0, min(100.0, score))
+
+    def _analyze_traffic(self, pois_by_category: Dict[str, List[POI]]) -> Dict[str, Any]:
+        """Analizuje poziom ruchu ulicznego."""
+        roads = pois_by_category.get('roads', [])
+        if not roads:
+            return {'level': 'Low', 'label': 'Niski', 'description': 'Brak głównych dróg w bezpośrednim sąsiedztwie.'}
+            
+        # Priorytety
+        heavy = [p for p in roads if p.subcategory in ['motorway', 'trunk']]
+        primary = [p for p in roads if p.subcategory == 'primary']
+        rails = [p for p in roads if p.subcategory in ['tram', 'rail']]
+        secondary = [p for p in roads if p.subcategory == 'secondary']
+        
+        nearest_heavy = min((p.distance_m or 9999 for p in heavy), default=9999)
+        nearest_primary = min((p.distance_m or 9999 for p in primary), default=9999)
+        nearest_rails = min((p.distance_m or 9999 for p in rails), default=9999)
+        
+        if nearest_heavy < 300:
+            return {'level': 'Extreme', 'label': 'Bardzo Wysoki', 'description': 'Bezpośrednie sąsiedztwo autostrady lub drogi ekspresowej.'}
+        if nearest_primary < 100 or nearest_heavy < 800:
+            return {'level': 'High', 'label': 'Wysoki', 'description': 'Bliskość głównej arterii komunikacyjnej.'}
+        if nearest_rails < 80 or nearest_primary < 300:
+             return {'level': 'Moderate', 'label': 'Umiarkowany', 'description': 'Słyszalny ruch miejski lub komunikacja szynowa.'}
+             
+        return {'level': 'Low', 'label': 'Niski', 'description': 'Okolica oddalona od głównych źródeł hałasu drogowego.'}
     
     def _score_category(
         self,
@@ -211,7 +262,8 @@ class POIAnalyzer:
             'transport': 'transport publiczny',
             'education': 'edukacja',
             'health': 'służba zdrowia',
-            'leisure': 'rekreacja',
+            'nature': 'zieleń i wypoczynek',
+            'leisure': 'sport i rekreacja',
             'food': 'gastronomia',
             'finance': 'banki',
         }
@@ -235,7 +287,8 @@ class POIAnalyzer:
             'transport': 'Transport publiczny',
             'education': 'Edukacja',
             'health': 'Zdrowie',
-            'leisure': 'Rekreacja',
+            'nature': 'Zieleń i Wypoczynek',
+            'leisure': 'Sport i Rekreacja',
             'food': 'Gastronomia',
             'finance': 'Finanse',
         }
@@ -258,4 +311,9 @@ class POIAnalyzer:
                 ]
             }
         
+        
+        # Filtruj 'roads' ze statystyk (nie chcemy ich na liście kafelków jako POI)
+        if 'roads' in stats:
+            del stats['roads']
+            
         return stats

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * Login View - tymczasowo nieaktywny
+ * Loktis - Login View - tymczasowo nieaktywny
+ * loktis.pl
  * 
  * TODO: Aktywować gdy będzie potrzebna autoryzacja użytkowników
  */
@@ -67,8 +68,8 @@ async function handleLogin() {
     <Card class="w-full max-w-md">
       <template #title>
         <div class="text-center">
-          <i class="pi pi-home text-4xl mb-2 text-primary"></i>
-          <h1 class="text-2xl font-bold">Analizator Ogłoszeń</h1>
+          <i class="pi pi-map-marker text-4xl mb-2 text-primary"></i>
+          <h1 class="text-2xl font-bold">Loktis</h1>
           <p class="text-surface-500 text-sm mt-1">Zaloguj się aby kontynuować</p>
         </div>
       </template>

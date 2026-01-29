@@ -82,7 +82,7 @@ function openUserMenu(e: MouseEvent) {
 
         <router-link to="/" class="flex items-center gap-2 no-underline text-color">
           <i class="pi pi-building text-xl text-primary" />
-          <span class="font-bold text-lg">FloorPlan</span>
+          <span class="font-bold text-lg">Loktis</span>
         </router-link>
       </div>
     </template>

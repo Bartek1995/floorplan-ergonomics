@@ -1,4 +1,4 @@
-# 🏠 Analizator Ogłoszeń Nieruchomości
+# 🏠 Loktis
 
 Aplikacja do szybkiej analizy ogłoszeń mieszkaniowych z serwisów **Otodom** i **OLX** z oceną okolicy w oparciu o OpenStreetMap.
 
@@ -14,9 +14,26 @@ Aplikacja do szybkiej analizy ogłoszeń mieszkaniowych z serwisów **Otodom** i
 - **📈 Scoring okolicy** - automatyczna ocena infrastruktury z podziałem na kategorie:
   - 🛒 Sklepy | 🚌 Transport | 🎓 Edukacja | 🏥 Zdrowie | 🌳 Rekreacja | 🍽️ Gastronomia | 🏦 Finanse
 - **🔇 Quiet Score** - ocena poziomu ciszy/hałasu na podstawie obecności głośnych obiektów
-- **🗺️ Interaktywna mapa** - Leaflet z kolorowymi markerami POI i radius overlay
+- **🚦 Analiza Ruchu Drogowego** - wykrywanie tras szybkiego ruchu i torowisk z oceną wpływu na hałas
+- **🗺️ Interaktywna mapa** - Leaflet lub Google Maps (przełączalne) z kolorowymi markerami POI
 - **⚡ Streaming w czasie rzeczywistym** - aktualizacje statusu podczas analizy (NDJSON)
-- **📝 Raport z analizy** - TL;DR (3 plusy + 3 ryzyka), szczegóły ogłoszenia, mapa POI
+- **📝 Raport z analizy** - TL;DR (3 plusy + 3 ryzyka), szczegóły ogłoszenia, mapa POI, Galeria FullScreen
+
+## ⚙️ Wymagania Środowiskowe
+
+Przed uruchomieniem utwórz plik `.env` w głównym katalogu (lub skorzystaj z `.env.example`):
+
+```ini
+# Backend
+GEMINI_API_KEY=twoj_klucz_ai
+SECRET_KEY=twoj_klucz_django  # Wymagane na produkcji!!!
+DEBUG=True                    # False na produkcji
+ALLOWED_HOSTS=localhost,127.0.0.1
+
+# Frontend
+VITE_GOOGLE_MAPS_API_KEY=twoj_klucz_google  # Opcjonalne (dla map Google)
+VITE_API_URL=http://localhost:8000/api
+```
 
 ## 🏗️ Architektura
 
