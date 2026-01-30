@@ -1,12 +1,12 @@
 """
-Serializery DRF dla analizatora ogłoszeń.
+Serializery DRF dla analizy lokalizacji.
 """
 from rest_framework import serializers
-from .models import AnalysisResult
+from .models import LocationAnalysis
 
 
-class AnalyzeRequestSerializer(serializers.Serializer):
-    """Walidacja requesta analizy."""
+class AnalyzeListingRequestSerializer(serializers.Serializer):
+    """Walidacja requesta analizy przez URL ogłoszenia."""
     url = serializers.URLField(
         required=True,
         max_length=2048,
@@ -26,16 +26,61 @@ class AnalyzeRequestSerializer(serializers.Serializer):
     )
 
 
+class AnalyzeLocationRequestSerializer(serializers.Serializer):
+    """Walidacja requesta analizy lokalizacji (location-first model)."""
+    latitude = serializers.FloatField(
+        required=True,
+        min_value=-90,
+        max_value=90,
+        help_text="Szerokość geograficzna"
+    )
+    longitude = serializers.FloatField(
+        required=True,
+        min_value=-180,
+        max_value=180,
+        help_text="Długość geograficzna"
+    )
+    price = serializers.FloatField(
+        required=True,
+        min_value=0,
+        help_text="Cena nieruchomości"
+    )
+    area_sqm = serializers.FloatField(
+        required=True,
+        min_value=1,
+        help_text="Powierzchnia w m²"
+    )
+    address = serializers.CharField(
+        required=True,
+        max_length=500,
+        help_text="Adres lokalizacji"
+    )
+    radius = serializers.IntegerField(
+        required=False,
+        default=500,
+        min_value=100,
+        max_value=2000,
+        help_text="Promień analizy w metrach"
+    )
+    reference_url = serializers.URLField(
+        required=False,
+        allow_blank=True,
+        max_length=2048,
+        help_text="Opcjonalny URL ogłoszenia jako referencja"
+    )
+
+
 class TLDRSerializer(serializers.Serializer):
     """TL;DR sekcja raportu."""
     pros = serializers.ListField(child=serializers.CharField())
     cons = serializers.ListField(child=serializers.CharField())
 
 
-class ListingDataSerializer(serializers.Serializer):
-    """Dane z ogłoszenia."""
-    url = serializers.CharField()
+class PropertyDataSerializer(serializers.Serializer):
+    """Dane o nieruchomości."""
+    url = serializers.CharField(allow_blank=True)
     title = serializers.CharField(allow_blank=True)
+    address = serializers.CharField(allow_blank=True)
     price = serializers.FloatField(allow_null=True)
     price_per_sqm = serializers.FloatField(allow_null=True)
     area_sqm = serializers.FloatField(allow_null=True)
@@ -43,11 +88,11 @@ class ListingDataSerializer(serializers.Serializer):
     floor = serializers.CharField(allow_blank=True)
     location = serializers.CharField(allow_blank=True)
     description = serializers.CharField(allow_blank=True)
-    images = serializers.ListField(child=serializers.URLField())
+    images = serializers.ListField(child=serializers.URLField(), required=False)
     latitude = serializers.FloatField(allow_null=True)
     longitude = serializers.FloatField(allow_null=True)
     has_precise_location = serializers.BooleanField()
-    errors = serializers.ListField(child=serializers.CharField())
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
 
 
 class NeighborhoodSerializer(serializers.Serializer):
@@ -66,27 +111,27 @@ class AnalysisReportSerializer(serializers.Serializer):
     errors = serializers.ListField(child=serializers.CharField())
     warnings = serializers.ListField(child=serializers.CharField())
     tldr = TLDRSerializer()
-    listing = ListingDataSerializer()
+    listing = PropertyDataSerializer()
     neighborhood = NeighborhoodSerializer()
     checklist = serializers.ListField(child=serializers.CharField())
     limitations = serializers.ListField(child=serializers.CharField())
 
 
-class AnalysisResultSerializer(serializers.ModelSerializer):
-    """Serializer dla modelu AnalysisResult (historia)."""
+class LocationAnalysisSerializer(serializers.ModelSerializer):
+    """Serializer dla modelu LocationAnalysis (historia)."""
     
     class Meta:
-        model = AnalysisResult
+        model = LocationAnalysis
         fields = [
             'id',
             'url',
             'title',
+            'address',
             'price',
             'price_per_sqm',
             'area_sqm',
             'rooms',
             'floor',
-            'location',
             'latitude',
             'longitude',
             'has_precise_location',
@@ -99,10 +144,9 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class AnalysisResultDetailSerializer(serializers.ModelSerializer):
+class LocationAnalysisDetailSerializer(serializers.ModelSerializer):
     """Pełny serializer z wszystkimi danymi."""
     
     class Meta:
-        model = AnalysisResult
+        model = LocationAnalysis
         fields = '__all__'
-        read_only_fields = fields

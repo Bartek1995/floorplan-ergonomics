@@ -43,7 +43,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'django_filters',
-    'listing_analyzer',
+    'location_analysis',
 ]
 
 MIDDLEWARE = [
@@ -192,7 +192,7 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        'listing_analyzer': {
+        'location_analysis': {
             'handlers': ['console'],
             'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,

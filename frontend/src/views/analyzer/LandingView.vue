@@ -1,24 +1,34 @@
 <script setup lang="ts">
 /**
- * Loktis - Landing View - strona główna z formularzem analizy
- * loktis.pl - Inteligentna analiza ogłoszeń nieruchomości
+ * Loktis - Landing View - strona główna z formularzem analizy lokalizacji
+ * loktis.pl - Analiza ryzyka zakupu mieszkania
+ * 
+ * NOWY MODEL: User wskazuje lokalizację + podaje cenę/metraż
+ * Link do ogłoszenia jest OPCJONALNY (tylko referencja)
  */
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
-import { analyzerApi, getErrorMessage, type AnalysisReport, type HistoryItem } from '@/api/analyzerApi';
+import { analyzerApi, getErrorMessage, type HistoryItem } from '@/api/analyzerApi';
+import LocationPicker from '@/components/LocationPicker.vue';
 
 const router = useRouter();
 const toast = useToast();
 
-// State
-const url = ref('');
+// State - location first approach
+const selectedLocation = ref<{ lat: number; lng: number; address: string } | null>(null);
+const price = ref<number | null>(null);
+const areaSqm = ref<number | null>(null);
+const referenceUrl = ref('');
 const radius = ref(500);
+
+// UI State
 const isLoading = ref(false);
 const loadingStatus = ref('');
 const loadingProgress = ref(0);
 const recentAnalyses = ref<HistoryItem[]>([]);
 const isLoadingRecent = ref(false);
+const showAdvanced = ref(false);
 
 const radiusOptions = [
   { label: '500m', value: 500 },
@@ -29,46 +39,57 @@ const radiusOptions = [
 const loadingSteps = [
   { status: 'Inicjalizacja...', progress: 10 },
   { status: 'Pobieranie danych...', progress: 25 },
-  { status: 'Analizowanie...', progress: 50 },
-  { status: 'Sprawdzanie okolicy...', progress: 75 },
+  { status: 'Analizowanie okolicy...', progress: 50 },
+  { status: 'Sprawdzanie POI...', progress: 75 },
   { status: 'Generowanie raportu...', progress: 90 },
 ];
 
 // Computed
-const isValidUrl = computed(() => {
-  if (!url.value) return false;
-  try {
-    const parsed = new URL(url.value);
-    return ['http:', 'https:'].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
+const canSubmit = computed(() => {
+  return selectedLocation.value !== null && price.value !== null && areaSqm.value !== null && !isLoading.value;
 });
 
-const canSubmit = computed(() => isValidUrl.value && !isLoading.value);
+const pricePerSqm = computed(() => {
+  if (price.value && areaSqm.value && areaSqm.value > 0) {
+    return Math.round(price.value / areaSqm.value);
+  }
+  return null;
+});
 
 // Methods
+function handleLocationSelected(data: { lat: number; lng: number; address: string }) {
+  selectedLocation.value = data;
+}
+
+function clearLocation() {
+  selectedLocation.value = null;
+}
+
 async function handleAnalyze() {
-  if (!canSubmit.value) return;
+  if (!canSubmit.value || !selectedLocation.value) return;
   
   isLoading.value = true;
   loadingStatus.value = 'Inicjalizacja...';
   loadingProgress.value = 10;
   
   try {
-    // Analiza strumieniowa
-    const report = await analyzerApi.analyzeStream(
-        url.value, 
-        radius.value,
-        (event) => {
-            if (event.message) {
-                loadingStatus.value = event.message;
-                // Match status to progress
-                const step = loadingSteps.find(s => event.message?.includes(s.status.split('...')[0]));
-                if (step) loadingProgress.value = step.progress;
-                else loadingProgress.value = Math.min(loadingProgress.value + 10, 95);
-            }
+    // Analiza strumieniowa z lokalizacją
+    const report = await analyzerApi.analyzeLocationStream(
+      selectedLocation.value.lat,
+      selectedLocation.value.lng,
+      price.value!,
+      areaSqm.value!,
+      selectedLocation.value.address,
+      radius.value,
+      referenceUrl.value || undefined,
+      (event) => {
+        if (event.message) {
+          loadingStatus.value = event.message;
+          const step = loadingSteps.find(s => event.message?.includes(s.status.split('...')[0]));
+          if (step) loadingProgress.value = step.progress;
+          else loadingProgress.value = Math.min(loadingProgress.value + 10, 95);
         }
+      }
     );
     
     loadingProgress.value = 100;
@@ -79,7 +100,7 @@ async function handleAnalyze() {
     
     // Zapisz raport w sessionStorage i przekieruj
     sessionStorage.setItem('lastReport', JSON.stringify(report));
-    sessionStorage.setItem('lastReportUrl', url.value);
+    sessionStorage.setItem('lastReportUrl', referenceUrl.value || selectedLocation.value.address);
     
     router.push({
       name: 'report',
@@ -113,12 +134,6 @@ async function loadRecentAnalyses() {
 
 function openHistoryItem(item: HistoryItem) {
   router.push({ name: 'history-detail', params: { id: item.id } });
-}
-
-async function reanalyzeItem(item: HistoryItem, event: Event) {
-  event.stopPropagation(); // Prevent row click
-  url.value = item.url;
-  await handleAnalyze();
 }
 
 function formatPrice(price: number | null): string {
@@ -166,10 +181,10 @@ loadRecentAnalyses();
             Loktis
           </h1>
           <p class="text-lg text-surface-600 dark:text-surface-300 font-medium mb-2">
-            Inteligentna analiza ogłoszeń nieruchomości
+            Analiza ryzyka zakupu mieszkania
           </p>
           <p class="text-base text-surface-500 max-w-2xl mx-auto">
-            Wklej link do ogłoszenia z Otodom lub OLX i poznaj szczegółową ocenę okolicy
+            Wskaż lokalizację, podaj cenę i metraż – otrzymasz szczegółową ocenę okolicy i ryzyk zakupu
           </p>
         </div>
         
@@ -180,39 +195,148 @@ loadRecentAnalyses();
           
           <div class="relative bg-white/80 dark:bg-surface-800/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-white/20">
             <div class="flex flex-col gap-6">
-              <!-- URL Input -->
-              <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <i class="pi pi-link text-surface-400"></i>
-                </div>
-                <InputText 
-                  v-model="url"
-                  placeholder="https://www.otodom.pl/pl/oferta/..."
-                  class="w-full !pl-11 !py-4 !text-lg !rounded-xl !border-2 !border-surface-200 focus:!border-primary-400 !transition-all"
-                  :disabled="isLoading"
-                  @keyup.enter="handleAnalyze"
-                />
-              </div>
               
-              <!-- Options Row -->
-              <div class="flex flex-wrap items-center justify-between gap-4">
-                <div class="flex items-center gap-3">
-                  <span class="text-sm font-medium text-surface-600 dark:text-surface-300">
-                    <i class="pi pi-compass mr-1"></i>
-                    Zasięg:
-                  </span>
-                  <SelectButton 
-                    v-model="radius" 
-                    :options="radiusOptions" 
-                    optionLabel="label" 
-                    optionValue="value" 
-                    :allowEmpty="false"
-                    class="!shadow-sm"
-                  />
+              <!-- Step 1: Location -->
+              <div>
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary-500 text-white text-sm font-bold">1</span>
+                  <h3 class="font-semibold text-surface-800 dark:text-surface-100">Wskaż lokalizację</h3>
+                  <span class="text-red-500">*</span>
                 </div>
                 
+                <!-- Selected location display or picker -->
+                <div v-if="selectedLocation" class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl p-4">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <i class="pi pi-check text-white"></i>
+                      </div>
+                      <div>
+                        <p class="font-medium text-surface-800 dark:text-surface-100">{{ selectedLocation.address }}</p>
+                        <p class="text-sm text-surface-500">{{ selectedLocation.lat.toFixed(5) }}, {{ selectedLocation.lng.toFixed(5) }}</p>
+                      </div>
+                    </div>
+                    <Button 
+                      icon="pi pi-times" 
+                      severity="secondary" 
+                      text 
+                      rounded 
+                      @click="clearLocation"
+                      v-tooltip="'Zmień lokalizację'"
+                    />
+                  </div>
+                </div>
+                
+                <div v-else class="border-2 border-dashed border-surface-200 dark:border-surface-600 rounded-xl p-4">
+                  <LocationPicker
+                    @location-selected="handleLocationSelected"
+                    :show-cancel="false"
+                  />
+                </div>
+              </div>
+              
+              <!-- Step 2: Price & Area -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary-500 text-white text-sm font-bold">2</span>
+                    <h3 class="font-semibold text-surface-800 dark:text-surface-100">Cena</h3>
+                    <span class="text-red-500">*</span>
+                  </div>
+                  <div class="relative">
+                    <InputNumber 
+                      v-model="price"
+                      placeholder="np. 650 000"
+                      :min="0"
+                      :max="50000000"
+                      locale="pl-PL"
+                      class="w-full"
+                      inputClass="!py-3 !text-lg"
+                      :disabled="isLoading"
+                    />
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-surface-400 font-medium">PLN</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary-500 text-white text-sm font-bold">3</span>
+                    <h3 class="font-semibold text-surface-800 dark:text-surface-100">Metraż</h3>
+                    <span class="text-red-500">*</span>
+                  </div>
+                  <div class="relative">
+                    <InputNumber 
+                      v-model="areaSqm"
+                      placeholder="np. 54"
+                      :min="1"
+                      :max="1000"
+                      :minFractionDigits="0"
+                      :maxFractionDigits="1"
+                      class="w-full"
+                      inputClass="!py-3 !text-lg"
+                      :disabled="isLoading"
+                    />
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-surface-400 font-medium">m²</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Price per sqm display -->
+              <div v-if="pricePerSqm" class="bg-surface-50 dark:bg-surface-700/50 rounded-xl p-3 flex items-center justify-center gap-2">
+                <span class="text-surface-500">Cena za m²:</span>
+                <span class="font-bold text-primary-600 dark:text-primary-400">{{ formatPrice(pricePerSqm) }}/m²</span>
+              </div>
+              
+              <!-- Advanced Options Toggle -->
+              <div>
+                <button 
+                  @click="showAdvanced = !showAdvanced"
+                  class="flex items-center gap-2 text-sm text-surface-500 hover:text-primary-500 transition-colors"
+                >
+                  <i :class="showAdvanced ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"></i>
+                  Opcje zaawansowane
+                </button>
+                
+                <Transition name="slide">
+                  <div v-if="showAdvanced" class="mt-4 space-y-4">
+                    <!-- Reference URL (optional) -->
+                    <div>
+                      <label class="block text-sm font-medium text-surface-600 dark:text-surface-300 mb-2">
+                        <i class="pi pi-link mr-1"></i>
+                        Link do ogłoszenia (opcjonalnie)
+                      </label>
+                      <InputText 
+                        v-model="referenceUrl"
+                        placeholder="https://www.otodom.pl/pl/oferta/..."
+                        class="w-full"
+                        :disabled="isLoading"
+                      />
+                      <p class="text-xs text-surface-400 mt-1">Zapisany jako referencja w raporcie</p>
+                    </div>
+                    
+                    <!-- Radius -->
+                    <div class="flex items-center gap-3">
+                      <span class="text-sm font-medium text-surface-600 dark:text-surface-300">
+                        <i class="pi pi-compass mr-1"></i>
+                        Zasięg analizy:
+                      </span>
+                      <SelectButton 
+                        v-model="radius" 
+                        :options="radiusOptions" 
+                        optionLabel="label" 
+                        optionValue="value" 
+                        :allowEmpty="false"
+                        class="!shadow-sm"
+                      />
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+              
+              <!-- Submit Button -->
+              <div class="flex justify-end">
                 <Button
-                  :label="isLoading ? 'Analizuję...' : 'Analizuj ogłoszenie'"
+                  :label="isLoading ? 'Analizuję...' : 'Analizuj lokalizację'"
                   :icon="isLoading ? 'pi pi-spin pi-spinner' : 'pi pi-search'"
                   :disabled="!canSubmit"
                   @click="handleAnalyze"
@@ -270,22 +394,22 @@ loadRecentAnalyses();
         <!-- Features - Modern Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           <div class="group bg-white dark:bg-surface-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-surface-100 dark:border-surface-700 hover:-translate-y-1">
-            <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg mb-4 group-hover:scale-110 transition-transform">
-              <i class="pi pi-bolt text-2xl text-white"></i>
+            <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-red-400 to-rose-500 flex items-center justify-center shadow-lg mb-4 group-hover:scale-110 transition-transform">
+              <i class="pi pi-exclamation-triangle text-2xl text-white"></i>
             </div>
-            <h3 class="font-bold text-lg mb-2 text-surface-800 dark:text-surface-100">Szybka analiza</h3>
+            <h3 class="font-bold text-lg mb-2 text-surface-800 dark:text-surface-100">Czerwone Flagi</h3>
             <p class="text-surface-500">
-              Pobieramy dane z ogłoszenia i analizujemy okolicę w kilka sekund
+              Wykrywamy ryzykowne czynniki: hałas, bliskość dróg, brak zieleni
             </p>
           </div>
           
           <div class="group bg-white dark:bg-surface-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-surface-100 dark:border-surface-700 hover:-translate-y-1">
             <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg mb-4 group-hover:scale-110 transition-transform">
-              <i class="pi pi-map-marker text-2xl text-white"></i>
+              <i class="pi pi-chart-bar text-2xl text-white"></i>
             </div>
-            <h3 class="font-bold text-lg mb-2 text-surface-800 dark:text-surface-100">Analiza okolicy</h3>
+            <h3 class="font-bold text-lg mb-2 text-surface-800 dark:text-surface-100">Cena vs Rynek</h3>
             <p class="text-surface-500">
-              Sprawdzamy sklepy, transport, szkoły, przychodnie i inne POI
+              Porównujemy Twoją cenę ze średnią dzielnicy: tanio / ok / drogo
             </p>
           </div>
           
@@ -293,9 +417,9 @@ loadRecentAnalyses();
             <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg mb-4 group-hover:scale-110 transition-transform">
               <i class="pi pi-check-circle text-2xl text-white"></i>
             </div>
-            <h3 class="font-bold text-lg mb-2 text-surface-800 dark:text-surface-100">TL;DR & Checklista</h3>
+            <h3 class="font-bold text-lg mb-2 text-surface-800 dark:text-surface-100">Werdykt Zakupu</h3>
             <p class="text-surface-500">
-              Podsumowanie plusów i minusów oraz pytania do sprzedającego
+              Jasna rekomendacja: POLECAM / UWAŻAJ / ODRADZAM z uzasadnieniem
             </p>
           </div>
         </div>
@@ -327,7 +451,7 @@ loadRecentAnalyses();
               <!-- Info -->
               <div class="flex-1 min-w-0">
                 <p class="font-semibold text-surface-800 dark:text-surface-100 truncate">
-                  {{ item.title || 'Bez tytułu' }}
+                  {{ item.title || item.location || 'Bez tytułu' }}
                 </p>
                 <div class="flex items-center gap-3 text-sm text-surface-500">
                   <span v-if="item.price">{{ formatPrice(item.price) }}</span>
@@ -341,17 +465,6 @@ loadRecentAnalyses();
                 {{ formatDate(item.created_at) }}
               </div>
               
-              <!-- Actions -->
-              <Button 
-                icon="pi pi-refresh" 
-                size="small"
-                severity="secondary"
-                text
-                rounded
-                @click="(e) => reanalyzeItem(item, e)"
-                v-tooltip="'Analizuj ponownie'"
-                class="opacity-0 group-hover:opacity-100 transition-opacity"
-              />
               <i class="pi pi-chevron-right text-surface-300 group-hover:text-primary-500 transition-colors"></i>
             </div>
           </div>
@@ -377,6 +490,23 @@ loadRecentAnalyses();
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+}
+
+.slide-enter-to,
+.slide-leave-from {
+  max-height: 200px;
 }
 
 @keyframes blob {

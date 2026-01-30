@@ -8,10 +8,14 @@ from decimal import Decimal
 
 
 @dataclass
-class ListingData:
-    """Ustandaryzowane dane z ogłoszenia."""
-    url: str
+class PropertyData:
+    """
+    Ustandaryzowane dane o nieruchomości.
+    Używane zarówno przez parsery ogłoszeń jak i wprowadzanie ręczne (location-first).
+    """
+    url: str = ""
     title: str = ""
+    address: str = ""
     price: Optional[Decimal] = None
     price_per_sqm: Optional[Decimal] = None
     area_sqm: Optional[float] = None
@@ -30,19 +34,24 @@ class ListingData:
         return {
             'url': self.url,
             'title': self.title,
+            'address': self.address,
             'price': float(self.price) if self.price else None,
             'price_per_sqm': float(self.price_per_sqm) if self.price_per_sqm else None,
             'area_sqm': self.area_sqm,
             'rooms': self.rooms,
             'floor': self.floor,
-            'location': self.location,
+            'location': self.location or self.address,
             'description': self.description,
-            'images': self.images[:10],  # Limit do 10 zdjęć
+            'images': self.images[:10],
             'latitude': self.latitude,
             'longitude': self.longitude,
             'has_precise_location': self.has_precise_location,
             'errors': self.errors,
         }
+
+
+# Alias for backward compatibility
+ListingData = PropertyData
 
 
 class BaseProvider(ABC):
@@ -51,10 +60,8 @@ class BaseProvider(ABC):
     name: str = "base"
     domains: List[str] = []
     
-    # Timeout dla requestów HTTP (sekundy)
     REQUEST_TIMEOUT = 15
     
-    # User-Agent do symulowania przeglądarki
     USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -62,7 +69,6 @@ class BaseProvider(ABC):
     )
     
     def get_headers(self) -> dict:
-        """Zwraca nagłówki HTTP dla requestów."""
         return {
             'User-Agent': self.USER_AGENT,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -77,22 +83,19 @@ class BaseProvider(ABC):
         pass
     
     @abstractmethod
-    def parse(self, url: str) -> ListingData:
+    def parse(self, url: str) -> PropertyData:
         """
         Parsuje ogłoszenie z podanego URL.
-        Zwraca ListingData z danymi (mogą być niepełne).
-        Błędy zapisuje w ListingData.errors.
+        Zwraca PropertyData z danymi (mogą być niepełne).
+        Błędy zapisuje w PropertyData.errors.
         """
         pass
     
     def _extract_number(self, text: str) -> Optional[float]:
-        """Pomocnicza metoda do wyciągania liczb z tekstu."""
         import re
         if not text:
             return None
-        # Usuń spacje, zamień przecinek na kropkę
         cleaned = re.sub(r'\s+', '', text).replace(',', '.')
-        # Znajdź liczbę
         match = re.search(r'[\d.]+', cleaned)
         if match:
             try:
@@ -102,14 +105,11 @@ class BaseProvider(ABC):
         return None
     
     def _extract_price(self, text: str) -> Optional[Decimal]:
-        """Wyciąga cenę z tekstu."""
         import re
         if not text:
             return None
-        # Usuń walutę i spacje
         cleaned = re.sub(r'[^\d,.\s]', '', text).strip()
         cleaned = re.sub(r'\s+', '', cleaned).replace(',', '.')
-        # Obsłuż przypadek "450 000" -> "450000"
         cleaned = cleaned.replace(' ', '')
         try:
             return Decimal(cleaned)

@@ -140,18 +140,28 @@ export const analyzerApi = {
 
   /**
    * Analizuje ogłoszenie ze strumieniowaniem statusu (NDJSON)
+   * @param overrideLat - opcjonalna szerokość geograficzna (override gdy ogłoszenie nie ma lokalizacji)
+   * @param overrideLng - opcjonalna długość geograficzna (override)
    */
   async analyzeStream(
     url: string, 
     radius: number, 
-    onStatus: (event: { status: string; message?: string; result?: AnalysisReport; error?: string }) => void
+    onStatus: (event: { status: string; message?: string; result?: AnalysisReport; error?: string; location_hint?: string }) => void,
+    overrideLat?: number,
+    overrideLng?: number
   ): Promise<AnalysisReport> {
+    const body: Record<string, unknown> = { url, radius, use_cache: true };
+    if (overrideLat !== undefined && overrideLng !== undefined) {
+      body.latitude = overrideLat;
+      body.longitude = overrideLng;
+    }
+
     const response = await fetch(`${API_BASE_URL}/analyze/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url, radius, use_cache: true }),
+      body: JSON.stringify(body),
     });
 
     if (!response.body) throw new Error('Brak odpowiedzi ze serwera');
@@ -174,6 +184,80 @@ export const analyzerApi = {
           try {
             const event = JSON.parse(line);
             onStatus(event);
+            
+            if (event.status === 'complete') {
+              return event.result;
+            }
+            if (event.status === 'error') {
+              throw new Error(event.error || 'Wystąpił błąd analizy');
+            }
+          } catch (e) {
+            console.warn('Błąd parsowania linii streamu:', e);
+          }
+        }
+      }
+    } finally {
+      reader.cancel();
+    }
+    
+    throw new Error('Strumień zakończony bez wyniku');
+  },
+
+  /**
+   * Analizuje lokalizację (location-first model)
+   * User podaje: lokalizację, cenę, metraż
+   * Link do ogłoszenia jest opcjonalny (tylko referencja)
+   */
+  async analyzeLocationStream(
+    lat: number,
+    lng: number,
+    price: number,
+    areaSqm: number,
+    address: string,
+    radius: number,
+    referenceUrl?: string,
+    onStatus?: (event: { status: string; message?: string; result?: AnalysisReport; error?: string }) => void
+  ): Promise<AnalysisReport> {
+    const body: Record<string, unknown> = { 
+      latitude: lat, 
+      longitude: lng, 
+      price,
+      area_sqm: areaSqm,
+      address,
+      radius 
+    };
+    if (referenceUrl) {
+      body.reference_url = referenceUrl;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/analyze-location/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.body) throw new Error('Brak odpowiedzi ze serwera');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; 
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            onStatus?.(event);
             
             if (event.status === 'complete') {
               return event.result;

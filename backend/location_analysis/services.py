@@ -1,22 +1,22 @@
 """
-Główny serwis analizy ogłoszeń.
+Główny serwis analizy lokalizacji.
 Orchestruje cały proces: parsowanie → geo → raport.
 """
 import logging
 from typing import Optional, Dict, Any
 
-from .providers import get_provider_for_url, ProviderRegistry, ListingData
+from .providers import get_provider_for_url, ProviderRegistry, PropertyData
 from .geo import OverpassClient, POIAnalyzer
 from .report_builder import ReportBuilder, AnalysisReport
 from .cache import listing_cache, overpass_cache, TTLCache
-from .models import AnalysisResult
+from .models import LocationAnalysis
 
 logger = logging.getLogger(__name__)
 
 
 class AnalysisService:
     """
-    Główny serwis do analizy ogłoszeń nieruchomości.
+    Główny serwis do analizy lokalizacji nieruchomości.
     """
     
     # Promień dla analizy okolicy (metry)
@@ -103,7 +103,80 @@ class AnalysisService:
             logger.exception(f"Błąd analizy dla {url}")
             yield json.dumps({'status': 'error', 'error': str(e)}) + '\n'
     
-    def _parse_listing(self, url: str, use_cache: bool) -> ListingData:
+    # Alias for backwards compatibility
+    def analyze_listing_stream(self, url: str, radius: int = 500, use_cache: bool = True):
+        """Alias for analyze_stream for URL-based listing analysis."""
+        yield from self.analyze_stream(url, radius=radius, use_cache=use_cache)
+
+    def analyze_location_stream(
+        self,
+        lat: float,
+        lon: float,
+        price: float,
+        area_sqm: float,
+        address: str,
+        radius: int = 500,
+        reference_url: str = None
+    ):
+        """
+        Generator analizy lokalizacji (location-first model).
+        Yields: dict z eventem (status, message, result?)
+        """
+        import json
+        
+        try:
+            yield json.dumps({'status': 'starting', 'message': 'Rozpoczynam analizę lokalizacji...'}) + '\n'
+            
+            # Twórz sztuczny PropertyData z podanych danych
+            listing = PropertyData(
+                url=reference_url or f"location://{lat},{lon}",
+                title=address,
+                price=price,
+                area_sqm=area_sqm,
+                latitude=lat,
+                longitude=lon,
+                has_precise_location=True,
+                location=address,
+            )
+            
+            # Oblicz price_per_sqm
+            if price and area_sqm:
+                listing.price_per_sqm = round(price / area_sqm, 2)
+            
+            # Analiza okolicy
+            neighborhood_score = None
+            poi_stats = None
+            pois = None
+            
+            try:
+                yield json.dumps({'status': 'map', 'message': f'Analiza mapy (promień {radius}m)...'}) + '\n'
+                pois = self._get_pois(lat, lon, radius, use_cache=True)
+                
+                yield json.dumps({'status': 'calculating', 'message': 'Obliczanie wyników...'}) + '\n'
+                neighborhood_score = self.poi_analyzer.analyze(pois)
+                poi_stats = self.poi_analyzer.get_statistics(pois)
+                
+            except Exception as e:
+                logger.warning(f"Błąd analizy okolicy: {e}")
+                listing.errors.append("Nie udało się przeanalizować okolicy.")
+            
+            # Buduj raport
+            yield json.dumps({'status': 'generating', 'message': 'Generowanie raportu końcowego...'}) + '\n'
+            report = self.report_builder.build(
+                listing=listing,
+                neighborhood_score=neighborhood_score,
+                poi_stats=poi_stats,
+                all_pois=pois
+            )
+            
+            result = report.to_dict()
+            yield json.dumps({'status': 'complete', 'result': result}) + '\n'
+            
+        except Exception as e:
+            logger.exception(f"Błąd analizy lokalizacji ({lat}, {lon})")
+            yield json.dumps({'status': 'error', 'error': str(e)}) + '\n'
+    
+    def _parse_listing(self, url: str, use_cache: bool) -> PropertyData:
         """Parsuje ogłoszenie (z cache jeśli dostępne)."""
         cache_key = TTLCache.make_key('listing', url)
         
@@ -115,7 +188,7 @@ class AnalysisService:
         
         provider = get_provider_for_url(url)
         if not provider:
-            listing = ListingData(url=url)
+            listing = PropertyData(url=url)
             listing.errors.append("Brak providera dla tej domeny.")
             return listing
         
@@ -156,14 +229,14 @@ class AnalysisService:
     def _save_to_db(
         self,
         url: str,
-        listing: ListingData,
+        listing: PropertyData,
         report: AnalysisReport
-    ) -> Optional[AnalysisResult]:
+    ) -> Optional[LocationAnalysis]:
         """Zapisuje wynik do bazy danych."""
         try:
-            url_hash = AnalysisResult.generate_url_hash(url)
+            url_hash = LocationAnalysis.generate_url_hash(url)
             
-            result, created = AnalysisResult.objects.update_or_create(
+            result, created = LocationAnalysis.objects.update_or_create(
                 url_hash=url_hash,
                 defaults={
                     'url': url,
@@ -173,7 +246,7 @@ class AnalysisService:
                     'area_sqm': listing.area_sqm,
                     'rooms': listing.rooms,
                     'floor': listing.floor,
-                    'location': listing.location,
+                    'address': listing.location,
                     'description': listing.description[:5000] if listing.description else '',
                     'images': listing.images,
                     'latitude': listing.latitude,

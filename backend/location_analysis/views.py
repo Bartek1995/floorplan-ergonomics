@@ -1,20 +1,22 @@
 """
-Widoki API dla analizatora ogłoszeń.
+Widoki API dla analizy lokalizacji.
 """
 import logging
 
+from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
-from .models import AnalysisResult
+from .models import LocationAnalysis
 from .serializers import (
-    AnalyzeRequestSerializer,
+    AnalyzeListingRequestSerializer,
+    AnalyzeLocationRequestSerializer,
     AnalysisReportSerializer,
-    AnalysisResultSerializer,
-    AnalysisResultDetailSerializer,
+    LocationAnalysisSerializer,
+    LocationAnalysisDetailSerializer,
 )
 from .services import analysis_service
 from .rate_limiter import rate_limit
@@ -23,11 +25,56 @@ from .providers import ProviderRegistry
 logger = logging.getLogger(__name__)
 
 
-from django.http import StreamingHttpResponse
-
-class AnalyzeView(APIView):
+class AnalyzeLocationView(APIView):
     """
-    Endpoint do analizy ogłoszenia.
+    Endpoint do analizy lokalizacji (location-first model).
+    Główny endpoint dla loktis.pl - użytkownik podaje lokalizację, cenę, metraż.
+    
+    POST /api/analyze-location/
+    Returns: NDJSON stream
+    """
+    
+    @rate_limit()
+    def post(self, request):
+        """Analizuje lokalizację (stream)."""
+        serializer = AnalyzeLocationRequestSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(
+                {'errors': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        lat = serializer.validated_data['latitude']
+        lon = serializer.validated_data['longitude']
+        price = serializer.validated_data['price']
+        area_sqm = serializer.validated_data['area_sqm']
+        address = serializer.validated_data['address']
+        radius = serializer.validated_data.get('radius', 500)
+        reference_url = serializer.validated_data.get('reference_url', None)
+        
+        logger.info(f"Analiza lokalizacji (stream): ({lat}, {lon}) - {address}")
+        
+        response = StreamingHttpResponse(
+            analysis_service.analyze_location_stream(
+                lat=lat,
+                lon=lon,
+                price=price,
+                area_sqm=area_sqm,
+                address=address,
+                radius=radius,
+                reference_url=reference_url
+            ),
+            content_type='application/x-ndjson'
+        )
+        response['X-Accel-Buffering'] = 'no'
+        return response
+
+
+class AnalyzeListingView(APIView):
+    """
+    Endpoint do analizy ogłoszenia przez URL.
+    Opcjonalna funkcjonalność - głównie dla integracji z Otodom/OLX.
     
     POST /api/analyze/
     Returns: NDJSON stream
@@ -36,7 +83,7 @@ class AnalyzeView(APIView):
     @rate_limit()
     def post(self, request):
         """Analizuje ogłoszenie z podanego URL (stream)."""
-        serializer = AnalyzeRequestSerializer(data=request.data)
+        serializer = AnalyzeListingRequestSerializer(data=request.data)
         
         if not serializer.is_valid():
             return Response(
@@ -50,12 +97,11 @@ class AnalyzeView(APIView):
         
         logger.info(f"Analiza URL (stream): {url} (radius={radius})")
         
-        # Stream response (NDJSON)
         response = StreamingHttpResponse(
-            analysis_service.analyze_stream(url, radius=radius, use_cache=use_cache),
+            analysis_service.analyze_listing_stream(url, radius=radius, use_cache=use_cache),
             content_type='application/x-ndjson'
         )
-        response['X-Accel-Buffering'] = 'no'  # Disable Nginx buffering if present
+        response['X-Accel-Buffering'] = 'no'
         return response
 
 
@@ -64,12 +110,10 @@ class ValidateURLView(APIView):
     Endpoint do walidacji URL przed wysłaniem.
     
     POST /api/validate-url/
-    {"url": "..."}
     """
     
     def post(self, request):
         url = request.data.get('url', '')
-        
         is_valid, error = ProviderRegistry.validate_url(url)
         
         return Response({
@@ -87,15 +131,16 @@ class HistoryViewSet(ReadOnlyModelViewSet):
     
     GET /api/history/           - lista analiz
     GET /api/history/{id}/      - szczegóły analizy
+    GET /api/history/recent/    - ostatnie 10 analiz
     """
     
-    queryset = AnalysisResult.objects.all()
-    serializer_class = AnalysisResultSerializer
+    queryset = LocationAnalysis.objects.all()
+    serializer_class = LocationAnalysisSerializer
     
     def get_serializer_class(self):
         if self.action == 'retrieve':
-            return AnalysisResultDetailSerializer
-        return AnalysisResultSerializer
+            return LocationAnalysisDetailSerializer
+        return LocationAnalysisSerializer
     
     @action(detail=False, methods=['get'])
     def recent(self, request):
