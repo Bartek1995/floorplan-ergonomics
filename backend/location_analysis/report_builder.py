@@ -5,8 +5,8 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from listing_analyzer.providers.base import ListingData
-from listing_analyzer.geo.poi_analyzer import NeighborhoodScore
+from .providers.base import ListingData
+from .geo.poi_analyzer import NeighborhoodScore
 
 
 @dataclass
