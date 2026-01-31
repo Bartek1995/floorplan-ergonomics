@@ -13,6 +13,9 @@ import DialogService from 'primevue/dialogservice';
 import DynamicDialog from 'primevue/dynamicdialog';
 import { createPinia } from 'pinia';
 
+// AOS Animation Library - using CSS from CDN in index.html
+// Initialize AOS after app mount
+
 // Styles
 import '@/assets/styles.scss';
 import '@/assets/tailwind.css';
@@ -49,3 +52,12 @@ app.use(DialogService);
 app.component('DynamicDialog', DynamicDialog);
 
 app.mount('#app');
+
+// Initialize AOS after mount (loaded via CDN in index.html)
+if (typeof window !== 'undefined' && (window as any).AOS) {
+    (window as any).AOS.init({
+        duration: 800,
+        easing: 'ease-out',
+        once: true,
+    });
+}
