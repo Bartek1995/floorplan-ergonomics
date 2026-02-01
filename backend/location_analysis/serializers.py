@@ -68,6 +68,13 @@ class AnalyzeLocationRequestSerializer(serializers.Serializer):
         max_length=2048,
         help_text="Opcjonalny URL ogłoszenia jako referencja"
     )
+    user_profile = serializers.ChoiceField(
+        choices=['family', 'urban', 'investor'],
+        required=False,
+        default='family',
+        help_text="Profil użytkownika (family, urban, investor)"
+    )
+
 
 
 class TLDRSerializer(serializers.Serializer):

@@ -10,6 +10,8 @@ from .geo import OverpassClient, POIAnalyzer
 from .report_builder import ReportBuilder, AnalysisReport
 from .cache import listing_cache, overpass_cache, TTLCache
 from .models import LocationAnalysis
+from .personas import get_persona_by_string, PersonaType
+from .scoring import ScoringEngine, VerdictGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +118,8 @@ class AnalysisService:
         area_sqm: float,
         address: str,
         radius: int = 500,
-        reference_url: str = None
+        reference_url: str = None,
+        user_profile: str = 'family',
     ):
         """
         Generator analizy lokalizacji (location-first model).
@@ -125,7 +128,13 @@ class AnalysisService:
         import json
         
         try:
-            yield json.dumps({'status': 'starting', 'message': 'Rozpoczynam analizę lokalizacji...'}) + '\n'
+            # Pobierz persona dla profilu
+            persona = get_persona_by_string(user_profile)
+            
+            yield json.dumps({
+                'status': 'starting', 
+                'message': f'Rozpoczynam analizę lokalizacji dla profilu: {persona.emoji} {persona.name}...'
+            }) + '\n'
             
             # Twórz sztuczny PropertyData z podanych danych
             listing = PropertyData(
@@ -147,14 +156,40 @@ class AnalysisService:
             neighborhood_score = None
             poi_stats = None
             pois = None
+            scoring_result = None
+            verdict = None
             
             try:
                 yield json.dumps({'status': 'map', 'message': f'Analiza mapy (promień {radius}m)...'}) + '\n'
                 pois = self._get_pois(lat, lon, radius, use_cache=True)
                 
-                yield json.dumps({'status': 'calculating', 'message': 'Obliczanie wyników...'}) + '\n'
+                yield json.dumps({'status': 'calculating', 'message': 'Obliczanie scoringu bazowego...'}) + '\n'
+                # 1. Najpierw standardowa analiza POI (surowe score'y)
                 neighborhood_score = self.poi_analyzer.analyze(pois)
                 poi_stats = self.poi_analyzer.get_statistics(pois)
+                
+                yield json.dumps({
+                    'status': 'persona', 
+                    'message': f'Przeliczanie dla profilu: {persona.emoji} {persona.name}...'
+                }) + '\n'
+                
+                # 2. Teraz persona-based scoring
+                scoring_engine = ScoringEngine(persona)
+                scoring_result = scoring_engine.calculate(
+                    category_scores=neighborhood_score.category_scores,
+                    quiet_score=neighborhood_score.quiet_score or 50.0,
+                )
+                
+                # 3. Generuj werdykt decyzyjny
+                verdict_generator = VerdictGenerator()
+                verdict = verdict_generator.generate(scoring_result, persona)
+                
+                logger.info(
+                    f"Scoring dla ({lat}, {lon}) profil={user_profile}: "
+                    f"base={scoring_result.base_score:.1f}, "
+                    f"total={scoring_result.total_score:.1f}, "
+                    f"verdict={verdict.level.value}"
+                )
                 
             except Exception as e:
                 logger.warning(f"Błąd analizy okolicy: {e}")
@@ -176,7 +211,10 @@ class AnalysisService:
                 listing=listing,
                 report=report,
                 radius=radius,
-                reference_url=reference_url
+                reference_url=reference_url,
+                user_profile=user_profile,
+                scoring_result=scoring_result,
+                verdict=verdict,
             )
             
             result = report.to_dict()
@@ -184,6 +222,13 @@ class AnalysisService:
             # Dodaj public_id do wyniku
             if saved_analysis:
                 result['public_id'] = saved_analysis.public_id
+            
+            # Dodaj dane persona/scoring/verdict do wyniku
+            result['persona'] = persona.to_dict()
+            if scoring_result:
+                result['scoring'] = scoring_result.to_dict()
+            if verdict:
+                result['verdict'] = verdict.to_dict()
             
             yield json.dumps({'status': 'complete', 'result': result}) + '\n'
             
@@ -291,7 +336,10 @@ class AnalysisService:
         listing: PropertyData,
         report: AnalysisReport,
         radius: int = 500,
-        reference_url: str = None
+        reference_url: str = None,
+        user_profile: str = 'family',
+        scoring_result = None,
+        verdict = None,
     ) -> Optional[LocationAnalysis]:
         """Zapisuje wynik analizy lokalizacji do bazy danych."""
         try:
@@ -301,6 +349,11 @@ class AnalysisService:
             
             # Dodaj public_id do report_data
             report_dict = report.to_dict()
+            
+            # Przygotuj dane persona-based
+            scoring_data = scoring_result.to_dict() if scoring_result else {}
+            verdict_data = verdict.to_dict() if verdict else {}
+            persona_adjusted_score = scoring_result.total_score if scoring_result else None
             
             result, created = LocationAnalysis.objects.update_or_create(
                 url_hash=url_hash,
@@ -327,6 +380,11 @@ class AnalysisService:
                     'source_provider': 'location',
                     'analysis_radius': radius,
                     'parsing_errors': listing.errors,
+                    # Persona-based data
+                    'user_profile': user_profile,
+                    'scoring_data': scoring_data,
+                    'verdict_data': verdict_data,
+                    'persona_adjusted_score': persona_adjusted_score,
                 }
             )
             
@@ -336,7 +394,7 @@ class AnalysisService:
                 result.report_data = report_dict
                 result.save(update_fields=['report_data'])
             
-            logger.info(f"Zapisano analizę lokalizacji: {result.public_id}")
+            logger.info(f"Zapisano analizę lokalizacji: {result.public_id} [profil: {user_profile}]")
             return result
             
         except Exception as e:

@@ -48,8 +48,6 @@ To fundament projektu i główna przewaga nad portalami nieruchomości.
 | Gastronomia | ✅ | city-life |
 | Finanse | ✅ | najmniej istotne |
 
-**Brak:** interpretacji i werdyktu (patrz sekcja raportowa).
-
 ---
 
 ### 3. Quiet Score 2.0 (Noise Intelligence)
@@ -78,8 +76,6 @@ Analiza źródeł hałasu:
 - Infrastruktura
 - Quiet Score
 
-**Brak:** jednoznacznego werdyktu („polecane / warunkowo / niepolecane”).
-
 ---
 
 ### 5. Frontend (Vue 3)
@@ -88,8 +84,10 @@ Analiza źródeł hałasu:
 
 - Location picker (Leaflet)
 - Live progress analizy
-- Widok raportu
+- Widok raportu z mapami
 - Historia analiz
+- **Selektor profilu użytkownika**
+- **Wizualizacja werdyktu**
 
 Frontend wystarczający do sprzedaży MVP.
 
@@ -103,54 +101,54 @@ Frontend wystarczający do sprzedaży MVP.
 - Cache TTL (Overpass 24h, listingi 1h)
 - Rate limiting
 - Architektura Services / Providers
-- Endpointy:
-  - `POST /api/analyze-location/`
-  - `GET /api/report/{public_id}/`
-  - `GET /api/history/`
+- Pełne pokrycie testami (88 testów)
+
+---
+
+### 7. Profile użytkownika (Personas)
+**Status:** ✅ ZAIMPLEMENTOWANE  
+**Ciężkość wdrożenia:** 🟡 Średnia  
+**Impact:** 🔥 WYSOKI
+
+System dopasowujący analizę do typu użytkownika:
+- 👨‍👩‍👧 **Rodzina** (priorytet: edukacja, zieleń, cisza)
+- 🏙️ **Singiel / Para** (priorytet: transport, gastro, rozrywka)
+- 📈 **Inwestor** (priorytet: ROI, transport)
+
+Funkcjonalności:
+- Dynamiczne wagi kategorii
+- Wykrywanie specyficznych "dealbreakerów"
+- Personalizowane wyjaśnienia
+
+---
+
+### 8. Werdykt decyzyjny (Decision Verdict)
+**Status:** ✅ ZAIMPLEMENTOWANE  
+**Ciężkość wdrożenia:** � Niska  
+**Impact:** 🔥🔥 BARDZO WYSOKI
+
+Jednoznaczna rekomendacja oparta na danych:
+- ✅ **Polecane** (Score > 70)
+- ⚠️ **Warunkowo polecane** (Score 45-69)
+- ❌ **Niepolecane** (Score < 45 lub Dealbreaker)
+
+Zawiera:
+- Poziom pewności (Confidence Score)
+- Kluczowe czynniki
+- Kontekstowe uzasadnienie
 
 ---
 
 ## 🚧 Brakujące elementy krytyczne (High Impact)
 
-### 7. Profile użytkownika (Personas)
+### 9. Dynamiczne wagi (Custom Scoring - Advanced)
 **Status:** ❌ BRAK  
-**Ciężkość wdrożenia:** 🟡 Średnia  
+**Ciężkość wdrożenia:** � Średnia  
 **Impact:** 🔥 WYSOKI
 
-Profile:
-- Rodzina (cisza, szkoły, zieleń)
-- Singiel / City Life (transport, gastro)
-- Inwestor (płynność, ROI, studenci)
-
-Zmieniają:
-- wagi scoringu,
-- narrację raportu,
-- końcowy werdykt.
-
----
-
-### 8. Dynamiczne wagi (Custom Scoring)
-**Status:** ❌ BRAK  
-**Ciężkość wdrożenia:** 🟡 Średnia  
-**Impact:** 🔥 WYSOKI
-
-- Suwaki wag kategorii
-- Przeliczanie score bez ponownego Overpass
-- Poczucie kontroli po stronie użytkownika
-
----
-
-### 9. Weredykt decyzyjny (Decision Verdict)
-**Status:** ❌ BRAK  
-**Ciężkość wdrożenia:** 🟢 Niska  
-**Impact:** 🔥🔥 BARDZO WYSOKI
-
-Jednoznaczny output:
-- ✅ Polecane
-- ⚠️ Warunkowo polecane
-- ❌ Niepolecane
-
-Z uzasadnieniem opartym na danych.
+- Suwaki wag kategorii dla zaawansowanych użytkowników
+- Przeliczanie score bez ponownego zapytania do API
+- Poczucie pełnej kontroli
 
 ---
 
@@ -220,8 +218,8 @@ Z uzasadnieniem opartym na danych.
 
 ## 🎯 Priorytety wdrożeniowe
 
-1. Weredykt decyzyjny
-2. Profile użytkownika
+1. ~~Weredykt decyzyjny~~ (Zrobione)
+2. ~~Profile użytkownika~~ (Zrobione)
 3. Ukryte ryzyka lokalizacji
 4. Custom scoring (suwaki)
 5. Nasłonecznienie

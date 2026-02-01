@@ -48,6 +48,34 @@ class LocationAnalysis(models.Model):
     source_provider = models.CharField(max_length=50, blank=True)
     analysis_radius = models.IntegerField(default=500)
     parsing_errors = models.JSONField(default=list, blank=True)
+    
+    # Persona-based analysis (User Profiles)
+    user_profile = models.CharField(
+        max_length=20, 
+        default='family',
+        choices=[
+            ('family', 'Rodzina'),
+            ('urban', 'Singiel / City Life'),
+            ('investor', 'Inwestor'),
+        ],
+        help_text="Profil użytkownika użyty do analizy"
+    )
+    scoring_data = models.JSONField(
+        default=dict, 
+        blank=True,
+        help_text="Wynik scoringu z dynamicznymi wagami"
+    )
+    verdict_data = models.JSONField(
+        default=dict, 
+        blank=True,
+        help_text="Werdykt decyzyjny (polecane/warunkowo/niepolecane)"
+    )
+    persona_adjusted_score = models.FloatField(
+        null=True, 
+        blank=True,
+        help_text="Score dostosowany do profilu użytkownika"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:

@@ -53,8 +53,9 @@ class AnalyzeLocationView(APIView):
         address = serializer.validated_data['address']
         radius = serializer.validated_data.get('radius', 500)
         reference_url = serializer.validated_data.get('reference_url', None)
+        user_profile = serializer.validated_data.get('user_profile', 'family')
         
-        logger.info(f"Analiza lokalizacji (stream): ({lat}, {lon}) - {address}")
+        logger.info(f"Analiza lokalizacji (stream): ({lat}, {lon}) - {address} [profil: {user_profile}]")
         
         response = StreamingHttpResponse(
             analysis_service.analyze_location_stream(
@@ -64,7 +65,8 @@ class AnalyzeLocationView(APIView):
                 area_sqm=area_sqm,
                 address=address,
                 radius=radius,
-                reference_url=reference_url
+                reference_url=reference_url,
+                user_profile=user_profile,
             ),
             content_type='application/x-ndjson'
         )

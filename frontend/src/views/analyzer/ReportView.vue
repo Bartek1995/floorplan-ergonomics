@@ -625,6 +625,132 @@ onMounted(async () => {
           </div>
         </div>
         
+        <!-- Verdict Section (Persona System) -->
+        <div v-if="report!.verdict" class="relative bg-white rounded-2xl p-6 shadow-lg border border-slate-100 overflow-hidden">
+          <div 
+            class="absolute top-0 left-0 right-0 h-1"
+            :class="{
+              'bg-gradient-to-r from-emerald-400 to-green-500': report!.verdict.level === 'recommended',
+              'bg-gradient-to-r from-amber-400 to-orange-500': report!.verdict.level === 'conditional',
+              'bg-gradient-to-r from-red-400 to-rose-500': report!.verdict.level === 'not_recommended'
+            }"
+          ></div>
+          
+          <div class="flex flex-wrap items-start gap-6">
+            <!-- Verdict Badge -->
+            <div class="flex-shrink-0">
+              <div 
+                class="w-24 h-24 rounded-2xl flex flex-col items-center justify-center shadow-xl text-white"
+                :class="{
+                  'bg-gradient-to-br from-emerald-400 to-green-500': report!.verdict.level === 'recommended',
+                  'bg-gradient-to-br from-amber-400 to-orange-500': report!.verdict.level === 'conditional',
+                  'bg-gradient-to-br from-red-400 to-rose-500': report!.verdict.level === 'not_recommended'
+                }"
+              >
+                <span class="text-4xl">{{ report!.verdict.emoji }}</span>
+                <span class="text-sm font-bold mt-1">{{ Math.round(report!.verdict.score) }}/100</span>
+              </div>
+            </div>
+            
+            <!-- Verdict Content -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-3 mb-3">
+                <h2 class="text-2xl font-bold text-slate-900">{{ report!.verdict.label }}</h2>
+                <span 
+                  class="px-3 py-1 rounded-full text-xs font-semibold"
+                  :class="{
+                    'bg-emerald-100 text-emerald-700': report!.verdict.confidence >= 80,
+                    'bg-amber-100 text-amber-700': report!.verdict.confidence >= 60 && report!.verdict.confidence < 80,
+                    'bg-slate-100 text-slate-700': report!.verdict.confidence < 60
+                  }"
+                >
+                  {{ report!.verdict.confidence }}% pewności
+                </span>
+              </div>
+              
+              <p class="text-lg text-slate-700 mb-4">{{ report!.verdict.explanation }}</p>
+              
+              <!-- Key Factors -->
+              <div v-if="report!.verdict.key_factors?.length" class="flex flex-wrap gap-2">
+                <span 
+                  v-for="factor in report!.verdict.key_factors" 
+                  :key="factor"
+                  class="px-3 py-1.5 bg-slate-100 rounded-lg text-sm text-slate-700 font-medium"
+                >
+                  {{ factor }}
+                </span>
+              </div>
+            </div>
+            
+            <!-- Persona Badge (if available) -->
+            <div v-if="report!.persona" class="flex-shrink-0">
+              <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 text-center min-w-[140px]">
+                <span class="text-3xl">{{ report!.persona.emoji }}</span>
+                <p class="font-semibold text-sm text-slate-800 mt-2">{{ report!.persona.name }}</p>
+                <p class="text-xs text-slate-500 mt-0.5">Twój profil</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Scoring Details (collapsed by default) -->
+          <details v-if="report!.scoring" class="mt-6">
+            <summary class="cursor-pointer text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors">
+              Szczegóły scoringu
+            </summary>
+            <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div class="bg-slate-50 rounded-lg p-3 text-center">
+                <span class="text-xs text-slate-500">Bazowy score</span>
+                <p class="font-bold text-lg text-slate-800">{{ Math.round(report!.scoring.base_score) }}</p>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 text-center">
+                <span class="text-xs text-slate-500">Modyfikator ciszy</span>
+                <p class="font-bold text-lg text-slate-800">{{ (report!.scoring.quiet_modifier * 100 - 100).toFixed(0) }}%</p>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 text-center">
+                <span class="text-xs text-slate-500">Mocne strony</span>
+                <p class="font-bold text-lg text-emerald-600">{{ report!.scoring.strengths?.length || 0 }}</p>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 text-center">
+                <span class="text-xs text-slate-500">Słabe strony</span>
+                <p class="font-bold text-lg text-red-500">{{ report!.scoring.weaknesses?.length || 0 }}</p>
+              </div>
+            </div>
+            
+            <!-- Strengths & Weaknesses -->
+            <div v-if="report!.scoring.strengths?.length || report!.scoring.weaknesses?.length" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div v-if="report!.scoring.strengths?.length" class="bg-emerald-50 rounded-lg p-4">
+                <h4 class="font-semibold text-sm text-emerald-700 mb-2">Mocne strony</h4>
+                <ul class="space-y-1">
+                  <li v-for="strength in report!.scoring.strengths" :key="strength" class="text-sm text-emerald-600 flex items-center gap-2">
+                    <i class="pi pi-check-circle text-xs"></i>
+                    {{ strength }}
+                  </li>
+                </ul>
+              </div>
+              <div v-if="report!.scoring.weaknesses?.length" class="bg-red-50 rounded-lg p-4">
+                <h4 class="font-semibold text-sm text-red-700 mb-2">Słabe strony</h4>
+                <ul class="space-y-1">
+                  <li v-for="weakness in report!.scoring.weaknesses" :key="weakness" class="text-sm text-red-600 flex items-center gap-2">
+                    <i class="pi pi-times-circle text-xs"></i>
+                    {{ weakness }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+            
+            <!-- Dealbreaker Warning -->
+            <div v-if="report!.scoring.has_dealbreaker" class="mt-4 p-4 bg-red-100 border border-red-200 rounded-lg">
+              <div class="flex items-center gap-2 text-red-700">
+                <i class="pi pi-exclamation-triangle text-lg"></i>
+                <span class="font-semibold">Uwaga: Wykryto krytyczny problem!</span>
+              </div>
+              <p v-if="report!.scoring.dealbreaker_category" class="text-sm text-red-600 mt-1">
+                Kategoria "{{ getCategoryName(report!.scoring.dealbreaker_category) }}" ma zbyt niski wynik dla wybranego profilu.
+              </p>
+            </div>
+          </details>
+        </div>
+        
         <!-- Dane z ogłoszenia -->
         <div class="relative bg-white rounded-2xl p-6 shadow-lg border border-slate-100 overflow-hidden">
           <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 via-indigo-500 to-violet-500"></div>

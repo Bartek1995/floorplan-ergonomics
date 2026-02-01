@@ -80,6 +80,37 @@ export interface NeighborhoodData {
   }>;
 }
 
+// Persona types
+export interface PersonaData {
+  type: 'family' | 'urban' | 'investor';
+  name: string;
+  emoji: string;
+  description: string;
+}
+
+export interface ScoringData {
+  total_score: number;
+  base_score: number;
+  quiet_modifier: number;
+  category_breakdown: Record<string, { score: number; weight: number; weighted_score: number }>;
+  strengths: string[];
+  weaknesses: string[];
+  warnings: string[];
+  has_dealbreaker: boolean;
+  dealbreaker_category?: string;
+}
+
+export interface VerdictData {
+  level: 'recommended' | 'conditional' | 'not_recommended';
+  label: string;
+  emoji: string;
+  explanation: string;
+  key_factors: string[];
+  score: number;
+  confidence: number;
+  persona_match: 'excellent' | 'good' | 'acceptable' | 'poor' | 'mismatch';
+}
+
 export interface AnalysisReport {
   success: boolean;
   errors: string[];
@@ -89,7 +120,11 @@ export interface AnalysisReport {
   neighborhood: NeighborhoodData;
   checklist: string[];
   limitations: string[];
-  public_id?: string; // Hash do publicznego URL
+  public_id?: string;
+  // Persona system
+  persona?: PersonaData;
+  scoring?: ScoringData;
+  verdict?: VerdictData;
 }
 
 export interface ValidationResult {
@@ -217,7 +252,8 @@ export const analyzerApi = {
     address: string,
     radius: number,
     referenceUrl?: string,
-    onStatus?: (event: { status: string; message?: string; result?: AnalysisReport; error?: string }) => void
+    onStatus?: (event: { status: string; message?: string; result?: AnalysisReport; error?: string }) => void,
+    userProfile: 'family' | 'urban' | 'investor' = 'family'
   ): Promise<AnalysisReport> {
     const body: Record<string, unknown> = { 
       latitude: lat, 
@@ -225,7 +261,8 @@ export const analyzerApi = {
       price,
       area_sqm: areaSqm,
       address,
-      radius 
+      radius,
+      user_profile: userProfile
     };
     if (referenceUrl) {
       body.reference_url = referenceUrl;

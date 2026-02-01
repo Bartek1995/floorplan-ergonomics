@@ -32,6 +32,7 @@ const price = ref<number | null>(null)
 const areaSqm = ref<number | null>(null)
 const referenceUrl = ref('')
 const radius = ref(500)
+const userProfile = ref<'family' | 'urban' | 'investor'>('family')
 
 // UI State
 const isLoading = ref(false)
@@ -52,8 +53,34 @@ const loadingSteps = [
   { status: 'Inicjalizacja...', progress: 10 },
   { status: 'Pobieranie danych...', progress: 25 },
   { status: 'Analizowanie okolicy...', progress: 50 },
-  { status: 'Sprawdzanie POI...', progress: 75 },
+  { status: 'Przeliczanie dla profilu...', progress: 70 },
+  { status: 'Sprawdzanie POI...', progress: 80 },
   { status: 'Generowanie raportu...', progress: 90 },
+]
+
+// Profile options
+const profileOptions = [
+  { 
+    value: 'family' as const, 
+    emoji: '👨‍👩‍👧', 
+    name: 'Rodzina z dziećmi',
+    description: 'Priorytet: szkoły, przedszkola, zieleń, cisza',
+    color: 'from-emerald-400 to-teal-500'
+  },
+  { 
+    value: 'urban' as const, 
+    emoji: '🏙️', 
+    name: 'Singiel / Para',
+    description: 'Priorytet: transport, gastronomia, rozrywka',
+    color: 'from-blue-400 to-indigo-500'
+  },
+  { 
+    value: 'investor' as const, 
+    emoji: '📈', 
+    name: 'Inwestor',
+    description: 'Priorytet: płynność najmu, ROI, lokalizacja',
+    color: 'from-amber-400 to-orange-500'
+  },
 ]
 
 // FAQ Data - same format as HomePage
@@ -186,7 +213,8 @@ async function handleAnalyze() {
           if (step) loadingProgress.value = step.progress
           else loadingProgress.value = Math.min(loadingProgress.value + 10, 95)
         }
-      }
+      },
+      userProfile.value
     )
     
     loadingProgress.value = 100
@@ -492,6 +520,52 @@ loadRecentAnalyses()
               </div>
             </div>
             
+            <!-- Profile Selector -->
+            <div class="mb-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-violet-500 text-white font-bold shadow-md">4</span>
+                <h3 class="font-semibold text-lg text-neutral-800">Twój profil</h3>
+              </div>
+              
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <button
+                  v-for="profile in profileOptions"
+                  :key="profile.value"
+                  @click="userProfile = profile.value"
+                  :class="[
+                    'relative p-4 rounded-xl border-2 transition-all duration-200 text-left group',
+                    userProfile === profile.value 
+                      ? 'border-[#0c66ee] bg-blue-50 shadow-md' 
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                  ]"
+                  :disabled="isLoading"
+                >
+                  <div class="flex items-start gap-3">
+                    <div 
+                      class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-sm"
+                      :class="userProfile === profile.value ? `bg-gradient-to-br ${profile.color} text-white` : 'bg-gray-100'"
+                    >
+                      {{ profile.emoji }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="font-semibold text-sm" :class="userProfile === profile.value ? 'text-[#0c66ee]' : 'text-neutral-800'">
+                        {{ profile.name }}
+                      </p>
+                      <p class="text-xs text-gray-500 mt-0.5 leading-tight">{{ profile.description }}</p>
+                    </div>
+                  </div>
+                  
+                  <!-- Selected indicator -->
+                  <div 
+                    v-if="userProfile === profile.value"
+                    class="absolute top-2 right-2 w-5 h-5 rounded-full bg-[#0c66ee] flex items-center justify-center"
+                  >
+                    <MdiIcon :path="mdiCheckCircle" :size="14" class="text-white" />
+                  </div>
+                </button>
+              </div>
+            </div>
+            
             <!-- Advanced Options Toggle -->
             <div class="mb-6">
               <button 
@@ -575,7 +649,7 @@ loadRecentAnalyses()
                     <span class="text-2xl font-bold text-header-gradient">{{ loadingProgress }}%</span>
                   </div>
                   
-                  <div class="h-3 bg-white rounded-full overflow-hidden shadow-inner">
+                  <div class="h-3 bg-white rounded-full shadow-inner">
                     <div 
                       class="h-full bg-blue-gradient rounded-full transition-all duration-500"
                       :style="{ width: `${loadingProgress}%` }"
@@ -590,7 +664,7 @@ loadRecentAnalyses()
     </section>
 
     <!-- Features section -->
-    <section id="how-it-works" class="bg-trading-tools relative max-w-full sm:mx-4 my-20 py-16 shadow rounded-2xl overflow-hidden">
+    <section id="how-it-works" class="bg-trading-tools relative max-w-full sm:mx-4 my-20 py-16 shadow rounded-2xl">
       <div class="relative max-w-screen-xl px-4 sm:px-8 mx-auto">
         <div class="text-center mb-12">
           <h2 data-aos="flip-down" class="text-3xl sm:text-4xl font-semibold">
@@ -623,7 +697,7 @@ loadRecentAnalyses()
     </section>
 
     <!-- Getting started steps section -->
-    <section class="bg-partner relative max-w-full sm:mx-6 my-24 shadow sm:rounded-2xl overflow-hidden">
+    <section class="bg-partner relative max-w-full sm:mx-6 my-24 shadow sm:rounded-2xl">
       <div class="w-full px-6 sm:px-0 py-16 flex flex-col items-center justify-center space-y-8 text-center">
         <h2 data-aos="flip-down" class="text-3xl sm:text-4xl font-semibold text-neutral-800">
           Jak to działa?
