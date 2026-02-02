@@ -63,12 +63,17 @@ class POIAnalyzer:
         'ok': 500,          # < 500m
     }
     
-    def analyze(self, pois_by_category: Dict[str, List[POI]]) -> NeighborhoodScore:
+    def analyze(
+        self, 
+        pois_by_category: Dict[str, List[POI]],
+        metrics: Dict[str, Any] = None
+    ) -> NeighborhoodScore:
         """
-        Analizuje POI i zwraca scoring.
+        Analizuje POI i metryki, zwraca scoring.
         
         Args:
             pois_by_category: Słownik {kategoria: [lista POI]}
+            metrics: Słownik metryk (np. {'nature': {...}})
         
         Returns:
             NeighborhoodScore z wynikiem
@@ -88,8 +93,8 @@ class POIAnalyzer:
             for cat, weight in self.CATEGORY_WEIGHTS.items()
         )
         
-        # Oblicz Quiet Score
-        quiet_score = self._calculate_quiet_score(pois_by_category)
+        # Oblicz Quiet Score (z metrykami jeśli dostępne)
+        quiet_score = self._calculate_quiet_score(pois_by_category, metrics)
         
         # Generuj podsumowanie
         summary = self._generate_summary(total_score, category_scores, pois_by_category)
@@ -101,18 +106,37 @@ class POIAnalyzer:
             summary=summary,
             details={
                 **details,
-                'traffic': self._analyze_traffic(pois_by_category)
+                'traffic': self._analyze_traffic(pois_by_category),
+                'nature_metrics': metrics.get('nature', {}) if metrics else {},
             },
         )
 
-    def _calculate_quiet_score(self, pois_by_category: Dict[str, List[POI]]) -> float:
+    def _calculate_quiet_score(
+        self, 
+        pois_by_category: Dict[str, List[POI]],
+        metrics: Dict[str, Any] = None
+    ) -> float:
         """Oblicza indeks spokoju (0-100)."""
         score = 60.0 # Baza: umiarkowanie spokojnie
 
-        # Plusy: Zieleń i Wypoczynek (blisko)
-        nature = pois_by_category.get('nature', [])
-        if any(p.distance_m and p.distance_m <= 400 for p in nature):
-            score += 20
+        # Plusy: Zieleń - teraz z metryk zamiast listy POI
+        nature_metrics = metrics.get('nature', {}) if metrics else {}
+        green_density = nature_metrics.get('green_density_proxy', 0)
+        
+        # Bonus za gęstość zieleni (zastępuje stary bonus za nature POI)
+        if green_density >= 15:
+            score += 25  # Wysoka zieleń
+        elif green_density >= 5:
+            score += 15  # Średnia zieleń
+        elif green_density >= 1:
+            score += 5   # Niska zieleń
+        
+        # Bonus za bliskość parku (z metryk)
+        nearest_park = nature_metrics.get('nearest_distances', {}).get('park')
+        if nearest_park and nearest_park <= 300:
+            score += 10
+        elif nearest_park and nearest_park <= 500:
+            score += 5
         
         # Minusy: Transport (hałas uliczny)
         transport = pois_by_category.get('transport', [])
@@ -154,7 +178,7 @@ class POIAnalyzer:
         elif any(p.distance_m and p.distance_m <= 250 for p in primary):
             score -= 15
             
-        # Tory (Tramwaj, Kolej)
+        # Minusy: Tory (Tramwaj, Kolej)
         rails = [p for p in roads if p.subcategory in ['tram', 'rail']]
         if any(p.distance_m and p.distance_m <= 80 for p in rails):
             score -= 15

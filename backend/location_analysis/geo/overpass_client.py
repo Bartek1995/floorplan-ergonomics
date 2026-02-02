@@ -6,7 +6,20 @@ import requests
 import time
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
+
+from .nature_metrics import NatureMetrics
+
+
+# Typy landcover do metryk (NIE do listy POI)
+LANDCOVER_TYPES = frozenset({'grass', 'meadow', 'forest', 'wood', 'recreation_ground'})
+WATER_TYPES = frozenset({'water', 'beach', 'river', 'stream', 'canal', 'lake', 'pond', 'reservoir'})
+# Typy do listy POI nature
+NATURE_POI_TYPES = frozenset({'park', 'garden', 'nature_reserve'})
+
+# Max POI per category
+MAX_POIS_PER_CATEGORY = 30
+
 
 @dataclass
 class POI:
@@ -99,6 +112,7 @@ class OverpassClient:
             'alt_queries': [
                 '["landuse"~"forest|meadow|grass|recreation_ground"]',
                 '["natural"~"wood|water|beach"]',
+                '["waterway"~"river|stream|canal"]',
             ],
             'name': 'Zieleń i Wypoczynek',
             'subcategories': {
@@ -108,10 +122,15 @@ class OverpassClient:
                 'forest': 'Las',
                 'wood': 'Las',
                 'meadow': 'Łąka',
-                'water': 'Woda',
+                'water': 'Zbiornik wodny',
                 'beach': 'Plaża',
                 'grass': 'Trawnik',
                 'recreation_ground': 'Teren rekreacyjny',
+                'river': 'Rzeka',
+                'stream': 'Strumień',
+                'canal': 'Kanał',
+                'lake': 'Jezioro',
+                'pond': 'Staw',
             }
         },
         'leisure': {
@@ -175,10 +194,14 @@ class OverpassClient:
         lat: float,
         lon: float,
         radius_m: int = 500
-    ) -> Dict[str, List[POI]]:
+    ) -> Tuple[Dict[str, List[POI]], Dict[str, Any]]:
         """
-        Pobiera punkty POI w okolicy (Single Batch Request).
-        Wysyła jedno duże zapytanie zamiast wielu małych.
+        Pobiera punkty POI i metryki zieleni w okolicy (Single Batch Request).
+        
+        Returns:
+            Tuple: (pois_by_category, metrics)
+            - pois_by_category: Dict kategorii do list POI
+            - metrics: Dict z metrykami (np. 'nature' -> NatureMetrics.to_dict())
         """
         
         # 1. Zbuduj wielkie Query (Union)
@@ -229,10 +252,13 @@ class OverpassClient:
                 if attempt == max_retries - 1:
                     print("ERROR: Wszystkie próby pobrania danych nie powiodły się.")
                     # Zwracamy puste wyniki (fail gracefully)
-                    return {cat: [] for cat in self.POI_QUERIES}
+                    empty_metrics = NatureMetrics()
+                    empty_metrics.calculate_density(radius_m)
+                    return {cat: [] for cat in self.POI_QUERIES}, {'nature': empty_metrics.to_dict()}
 
         # 3. Klasyfikuj i Parsuj wyniki lokalnie
         pois_by_category = {cat: [] for cat in self.POI_QUERIES}
+        nature_metrics = NatureMetrics()
         
         # Cache przetworzonych id, żeby nie dublować (node może być częścią way, ale tu dostajemy node i way osobno z query)
         # Overpass 'out center' zwraca geometrię way jako center, więc jest ok.
@@ -246,19 +272,60 @@ class OverpassClient:
             elem_lon = elem.get('lon') or elem.get('center', {}).get('lon')
             if not elem_lat: continue
             
-            # Dopasuj kategorie
+            # Dopasuj kategorie (z uwzględnieniem metryk dla nature)
             matched_cats = self._match_categories(tags)
             
+            # Oblicz dystans raz
+            distance = self._haversine_distance(lat, lon, elem_lat, elem_lon)
+            
+            # Obsługa nature: rozdziel na POI vs metryki
+            leisure = tags.get('leisure', '')
+            landuse = tags.get('landuse', '')
+            natural = tags.get('natural', '')
+            
+            # Land cover -> metryki (nie POI)
+            if landuse in LANDCOVER_TYPES:
+                nature_metrics.add_landcover(landuse, distance)
+            if natural == 'wood':
+                nature_metrics.add_landcover('wood', distance)
+            
+            # Wody: natural=water/beach lub waterway=river/stream/canal
+            if natural in WATER_TYPES:
+                nature_metrics.add_water(distance, natural)
+            
+            waterway = tags.get('waterway', '')
+            if waterway in ('river', 'stream', 'canal'):
+                nature_metrics.add_water(distance, waterway)
+            
+            # Park/garden/nature_reserve -> POI + aktualizuj metrykę nearest_park
+            if leisure == 'park':
+                nature_metrics.add_park(distance)
+            
             for cat in matched_cats:
+                # Dla nature: pomiń land cover (grass/meadow/forest), ale zostaw parki i wodę
+                if cat == 'nature':
+                    # Parki, ogrody, rezerwaty - TAK
+                    is_valuable_nature_poi = leisure in NATURE_POI_TYPES
+                    # Wody (water, beach, river, stream) - TAK, pokazujemy na mapie
+                    is_water = natural in WATER_TYPES or waterway in ('river', 'stream', 'canal')
+                    
+                    # Pomiń tylko land cover (grass, meadow, forest, wood)
+                    if not is_valuable_nature_poi and not is_water:
+                        continue
+                
                 poi = self._create_poi(elem, tags, cat, elem_lat, elem_lon, lat, lon)
                 if poi:
                     pois_by_category[cat].append(poi)
         
-        # 4. Sortuj wynikowe listy
+        # 4. Oblicz density proxy
+        nature_metrics.calculate_density(radius_m)
+        
+        # 5. Sortuj i limituj wynikowe listy
         for cat in pois_by_category:
             pois_by_category[cat].sort(key=lambda p: p.distance_m)
+            pois_by_category[cat] = pois_by_category[cat][:MAX_POIS_PER_CATEGORY]
             
-        return pois_by_category
+        return pois_by_category, {'nature': nature_metrics.to_dict()}
 
     def _match_categories(self, tags: dict) -> List[str]:
         """Sprawdza, do jakich kategorii pasuje dany obiekt na podstawie tagów."""
@@ -283,14 +350,16 @@ class OverpassClient:
         if amenity in ['pharmacy', 'doctors', 'hospital', 'clinic']:
             matches.append('health')
             
-        # Nature (leisure ~ park|garden|nature_reserve OR landuse ~ ...)
+        # Nature (leisure ~ park|garden|nature_reserve OR landuse ~ ... OR waterway ~ ...)
         leisure = tags.get('leisure', '')
         landuse = tags.get('landuse', '')
         natural = tags.get('natural', '')
+        waterway = tags.get('waterway', '')
         
         if (leisure in ['park', 'garden', 'nature_reserve'] or
             landuse in ['forest', 'meadow', 'grass', 'recreation_ground'] or
-            natural in ['wood', 'water', 'beach']):
+            natural in ['wood', 'water', 'beach'] or
+            waterway in ['river', 'stream', 'canal']):
             matches.append('nature')
             
         # Leisure (playground, fitness, pitch, etc)
@@ -358,8 +427,8 @@ class OverpassClient:
         
         # Fallback nazwy
         if not name:
-            # DEBUG: Loguj (z filtrem spamu)
-            is_spam = (category == 'nature' and subcategory in ['grass', 'water', 'meadow', 'forest', 'wood', 'basin', 'garden']) or \
+            # DEBUG: Loguj (z filtrem spamu - tylko land cover bez nazwy)
+            is_spam = (category == 'nature' and subcategory in ['grass', 'meadow', 'forest', 'wood', 'basin']) or \
                       (category == 'roads' and subcategory in ['tram', 'rail'])
             if not is_spam:
                 print(f"DEBUG: Nameless POI found | Category: {category} | Type: {subcategory} | Tags: {tags}")

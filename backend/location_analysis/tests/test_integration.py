@@ -15,6 +15,28 @@ from location_analysis.personas import PersonaType
 from location_analysis.services import AnalysisService
 
 
+# Helper: domyślne puste metryki dla mocków
+EMPTY_NATURE_METRICS = {
+    'green_landcover_counts': {},
+    'green_types_present': [],
+    'nearest_distances': {},
+    'total_green_elements': 0,
+    'green_density_proxy': 0.0,
+    'greenery_level': 'niska',
+    'greenery_label': 'Zieleń w otoczeniu: niska',
+    'types_label': None,
+    'nearest_park_label': 'Brak parku w zasięgu',
+    'water_present': False,
+    'nearest_water_m': None,
+}
+
+def make_mock_pois(pois_dict=None):
+    """Tworzy mock return value dla _get_pois (tuple: pois, metrics)."""
+    if pois_dict is None:
+        pois_dict = {cat: [] for cat in ['shops', 'transport', 'education', 'health', 'nature', 'leisure', 'food', 'finance', 'roads']}
+    return (pois_dict, {'nature': EMPTY_NATURE_METRICS})
+
+
 class TestAnalyzeLocationAPIWithProfiles(TestCase):
     """Testy integracyjne dla API analizy lokalizacji z profilami."""
     
@@ -137,18 +159,8 @@ class TestAnalysisServiceWithProfiles(TestCase):
     @patch.object(AnalysisService, '_save_location_to_db')
     def test_analyze_location_stream_with_family_profile(self, mock_save, mock_pois):
         """analyze_location_stream działa z profilem family."""
-        # Mock POIs
-        mock_pois.return_value = {
-            'shops': [],
-            'transport': [],
-            'education': [],
-            'health': [],
-            'nature': [],
-            'leisure': [],
-            'food': [],
-            'finance': [],
-            'roads': [],
-        }
+        # Mock POIs (now returns tuple: pois, metrics)
+        mock_pois.return_value = make_mock_pois()
         mock_save.return_value = None
         
         # Wykonaj analizę
@@ -172,17 +184,7 @@ class TestAnalysisServiceWithProfiles(TestCase):
     @patch.object(AnalysisService, '_save_location_to_db')
     def test_response_contains_persona_data(self, mock_save, mock_pois):
         """Response zawiera dane o profilu."""
-        mock_pois.return_value = {
-            'shops': [],
-            'transport': [],
-            'education': [],
-            'health': [],
-            'nature': [],
-            'leisure': [],
-            'food': [],
-            'finance': [],
-            'roads': [],
-        }
+        mock_pois.return_value = make_mock_pois()
         mock_save.return_value = None
         
         results = list(self.service.analyze_location_stream(
@@ -208,17 +210,7 @@ class TestAnalysisServiceWithProfiles(TestCase):
     @patch.object(AnalysisService, '_save_location_to_db')
     def test_response_contains_scoring_data(self, mock_save, mock_pois):
         """Response zawiera dane scoringu."""
-        mock_pois.return_value = {
-            'shops': [],
-            'transport': [],
-            'education': [],
-            'health': [],
-            'nature': [],
-            'leisure': [],
-            'food': [],
-            'finance': [],
-            'roads': [],
-        }
+        mock_pois.return_value = make_mock_pois()
         mock_save.return_value = None
         
         results = list(self.service.analyze_location_stream(
@@ -242,17 +234,7 @@ class TestAnalysisServiceWithProfiles(TestCase):
     @patch.object(AnalysisService, '_save_location_to_db')
     def test_response_contains_verdict(self, mock_save, mock_pois):
         """Response zawiera werdykt."""
-        mock_pois.return_value = {
-            'shops': [],
-            'transport': [],
-            'education': [],
-            'health': [],
-            'nature': [],
-            'leisure': [],
-            'food': [],
-            'finance': [],
-            'roads': [],
-        }
+        mock_pois.return_value = make_mock_pois()
         mock_save.return_value = None
         
         results = list(self.service.analyze_location_stream(
@@ -290,7 +272,7 @@ class TestDifferentProfilesGiveDifferentVerdicts(TestCase):
         from location_analysis.geo.overpass_client import POI
         
         # Symuluj lokalizację miejską (dobry transport, gastro, słaba edukacja)
-        mock_pois.return_value = {
+        urban_pois = {
             'shops': [
                 POI(lat=52.23, lon=21.01, name='Żabka', category='shops', subcategory='convenience', distance_m=50, tags={}),
                 POI(lat=52.23, lon=21.01, name='Biedronka', category='shops', subcategory='supermarket', distance_m=150, tags={}),
@@ -314,6 +296,7 @@ class TestDifferentProfilesGiveDifferentVerdicts(TestCase):
             'finance': [POI(lat=52.23, lon=21.01, name='PKO BP', category='finance', subcategory='bank', distance_m=200, tags={})],
             'roads': [],
         }
+        mock_pois.return_value = make_mock_pois(urban_pois)
         mock_save.return_value = None
         
         # Analiza dla FAMILY
@@ -353,9 +336,7 @@ class TestProfileInStreamMessages(TestCase):
     @patch.object(AnalysisService, '_save_location_to_db')
     def test_starting_message_contains_profile_info(self, mock_save, mock_pois):
         """Pierwszy komunikat zawiera info o profilu."""
-        mock_pois.return_value = {cat: [] for cat in 
-                                  ['shops', 'transport', 'education', 'health',
-                                   'nature', 'leisure', 'food', 'finance', 'roads']}
+        mock_pois.return_value = make_mock_pois()
         mock_save.return_value = None
         
         results = list(self.service.analyze_location_stream(
@@ -378,9 +359,7 @@ class TestProfileInStreamMessages(TestCase):
     @patch.object(AnalysisService, '_save_location_to_db')
     def test_persona_calculation_step_exists(self, mock_save, mock_pois):
         """Jest krok 'persona' w streamie."""
-        mock_pois.return_value = {cat: [] for cat in 
-                                  ['shops', 'transport', 'education', 'health',
-                                   'nature', 'leisure', 'food', 'finance', 'roads']}
+        mock_pois.return_value = make_mock_pois()
         mock_save.return_value = None
         
         results = list(self.service.analyze_location_stream(

@@ -63,6 +63,23 @@ export interface TrafficAnalysis {
   description: string;
 }
 
+export interface NatureMetrics {
+  green_landcover_counts: Record<string, number>;
+  green_types_present: string[];
+  nearest_distances: Record<string, number>;
+  total_green_elements: number;
+  green_density_proxy: number;
+  greenery_level: 'wysoka' | 'średnia' | 'niska';
+  greenery_label: string;
+  types_label: string | null;
+  nearest_park_label: string;
+  water_present: boolean;
+  nearest_water_m: number | null;
+  water_types_present: string[];
+  water_type_distances: Record<string, number>;
+  water_label: string | null;
+}
+
 export interface NeighborhoodData {
   has_location: boolean;
   score: number | null;

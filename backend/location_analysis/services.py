@@ -67,7 +67,7 @@ class AnalysisService:
             if listing.has_precise_location and listing.latitude and listing.longitude:
                 try:
                     yield json.dumps({'status': 'map', 'message': f'Analiza mapy (promień {radius}m)...'}) + '\n'
-                    pois = self._get_pois(
+                    pois, metrics = self._get_pois(
                         listing.latitude,
                         listing.longitude,
                         radius,
@@ -75,7 +75,7 @@ class AnalysisService:
                     )
                     
                     yield json.dumps({'status': 'calculating', 'message': 'Obliczanie wyników...'}) + '\n'
-                    neighborhood_score = self.poi_analyzer.analyze(pois)
+                    neighborhood_score = self.poi_analyzer.analyze(pois, metrics)
                     poi_stats = self.poi_analyzer.get_statistics(pois)
                     
                 except Exception as e:
@@ -161,11 +161,11 @@ class AnalysisService:
             
             try:
                 yield json.dumps({'status': 'map', 'message': f'Analiza mapy (promień {radius}m)...'}) + '\n'
-                pois = self._get_pois(lat, lon, radius, use_cache=True)
+                pois, metrics = self._get_pois(lat, lon, radius, use_cache=True)
                 
                 yield json.dumps({'status': 'calculating', 'message': 'Obliczanie scoringu bazowego...'}) + '\n'
                 # 1. Najpierw standardowa analiza POI (surowe score'y)
-                neighborhood_score = self.poi_analyzer.analyze(pois)
+                neighborhood_score = self.poi_analyzer.analyze(pois, metrics)
                 poi_stats = self.poi_analyzer.get_statistics(pois)
                 
                 yield json.dumps({
@@ -266,8 +266,13 @@ class AnalysisService:
         lon: float,
         radius: int,
         use_cache: bool
-    ) -> Dict[str, list]:
-        """Pobiera POI (z cache jeśli dostępne)."""
+    ) -> tuple:
+        """
+        Pobiera POI i metryki (z cache jeśli dostępne).
+        
+        Returns:
+            tuple: (pois_by_category, metrics)
+        """
         cache_key = TTLCache.make_key('pois', lat, lon, radius)
         
         if use_cache:
@@ -277,14 +282,15 @@ class AnalysisService:
                 return cached
         
         logger.info(f"Pobieranie POI z Overpass: ({lat}, {lon}) r={radius}")
-        pois = self.overpass_client.get_pois_around(
+        pois, metrics = self.overpass_client.get_pois_around(
             lat, lon, radius
         )
         
+        result = (pois, metrics)
         if use_cache:
-            overpass_cache.set(cache_key, pois, ttl=86400)  # 24h
+            overpass_cache.set(cache_key, result, ttl=86400)  # 24h
         
-        return pois
+        return result
     
     def _save_to_db(
         self,

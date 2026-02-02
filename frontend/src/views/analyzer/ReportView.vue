@@ -5,7 +5,7 @@
  */
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { analyzerApi, type AnalysisReport, type POICategoryStats, type TrafficAnalysis } from '@/api/analyzerApi';
+import { analyzerApi, type AnalysisReport, type POICategoryStats, type TrafficAnalysis, type NatureMetrics } from '@/api/analyzerApi';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -134,6 +134,25 @@ const trafficColor = computed(() => {
   return 'bg-slate-500';
 });
 
+// Nature metrics
+const natureMetrics = computed<NatureMetrics | null>(() => {
+  return (report.value?.neighborhood?.details?.nature_metrics as NatureMetrics) || null;
+});
+
+const greeneryLevelColor = computed(() => {
+  const level = natureMetrics.value?.greenery_level;
+  if (level === 'wysoka') return { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' };
+  if (level === 'średnia') return { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' };
+  return { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' };
+});
+
+const greeneryLevelEmoji = computed(() => {
+  const level = natureMetrics.value?.greenery_level;
+  if (level === 'wysoka') return '🌳';
+  if (level === 'średnia') return '🌿';
+  return '🌵';
+});
+
 // Gallery State
 const displayGallery = ref(false);
 const activeImageIndex = ref(0);
@@ -221,6 +240,33 @@ function getCategoryIcon(category: string): string {
     finance: 'pi-wallet',
   };
   return icons[category] || 'pi-map-marker';
+}
+
+function getGreenTypeLabel(greenType: string): string {
+  const labels: Record<string, string> = {
+    forest: 'Las',
+    wood: 'Las',
+    meadow: 'Łąka',
+    grass: 'Trawniki',
+    recreation_ground: 'Teren rekreacyjny',
+    park: 'Park',
+    garden: 'Ogród',
+  };
+  return labels[greenType] || greenType;
+}
+
+function getWaterTypeLabel(waterType: string): string {
+  const labels: Record<string, string> = {
+    river: 'Rzeka',
+    stream: 'Strumień',
+    canal: 'Kanał',
+    lake: 'Jezioro',
+    pond: 'Staw',
+    water: 'Zbiornik',
+    beach: 'Plaża',
+    reservoir: 'Zbiornik',
+  };
+  return labels[waterType] || waterType;
 }
 
 function getCategoryColor(category: string): string {
@@ -900,6 +946,98 @@ onMounted(async () => {
                 <p class="text-lg leading-relaxed text-slate-700">
                   {{ report!.neighborhood.summary }}
                 </p>
+              </div>
+              
+              <!-- Nature Metrics Section -->
+              <div v-if="natureMetrics" class="mb-8">
+                <h3 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <span class="text-2xl">🌿</span>
+                  Zieleń w okolicy
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <!-- Greenery Level Badge -->
+                  <div 
+                    class="rounded-2xl p-5 border-2 transition-all"
+                    :class="[greeneryLevelColor.bg, greeneryLevelColor.border]"
+                  >
+                    <div class="flex items-center gap-3 mb-2">
+                      <span class="text-3xl">{{ greeneryLevelEmoji }}</span>
+                      <div>
+                        <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Poziom zieleni</div>
+                        <div class="text-xl font-bold capitalize" :class="greeneryLevelColor.text">
+                          {{ natureMetrics.greenery_level }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-sm text-slate-600">
+                      {{ natureMetrics.total_green_elements }} elementów w zasięgu
+                    </div>
+                  </div>
+                  
+                  <!-- Park Distance -->
+                  <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <div class="flex items-center gap-3 mb-2">
+                      <span class="text-3xl">🏞️</span>
+                      <div>
+                        <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Najbliższy park</div>
+                        <div class="text-xl font-bold text-slate-900">
+                          <template v-if="natureMetrics.nearest_distances?.park">
+                            {{ Math.round(natureMetrics.nearest_distances.park) }}m
+                          </template>
+                          <template v-else>
+                            <span class="text-slate-400">Brak w zasięgu</span>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-sm text-slate-600">
+                      {{ natureMetrics.nearest_park_label }}
+                    </div>
+                  </div>
+                  
+                  <!-- Water Presence -->
+                  <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <div class="flex items-center gap-3 mb-2">
+                      <span class="text-3xl">{{ natureMetrics.water_present ? '💧' : '🏜️' }}</span>
+                      <div>
+                        <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Woda</div>
+                        <div class="text-xl font-bold" :class="natureMetrics.water_present ? 'text-blue-600' : 'text-slate-400'">
+                          {{ natureMetrics.water_present ? 'Obecna' : 'Brak' }}
+                        </div>
+                      </div>
+                    </div>
+                    <div v-if="natureMetrics.water_present && natureMetrics.water_label" class="text-sm text-slate-600 mb-2">
+                      {{ natureMetrics.water_label }}
+                    </div>
+                    <div v-else-if="!natureMetrics.water_present" class="text-sm text-slate-400">
+                      Brak zbiorników wodnych w zasięgu
+                    </div>
+                    <!-- Water types badges -->
+                    <div v-if="natureMetrics.water_types_present?.length" class="flex flex-wrap gap-1.5 mt-2">
+                      <span 
+                        v-for="waterType in natureMetrics.water_types_present" 
+                        :key="waterType"
+                        class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-full text-xs font-medium text-blue-700"
+                      >
+                        {{ getWaterTypeLabel(waterType) }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Green Types Present -->
+                <div v-if="natureMetrics.green_types_present?.length" class="mt-4">
+                  <div class="text-sm font-medium text-slate-600 mb-2">Typy zieleni w okolicy:</div>
+                  <div class="flex flex-wrap gap-2">
+                    <span 
+                      v-for="greenType in natureMetrics.green_types_present" 
+                      :key="greenType"
+                      class="px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-full text-sm font-medium text-emerald-700"
+                    >
+                      {{ getGreenTypeLabel(greenType) }}
+                    </span>
+                  </div>
+                </div>
               </div>
               
               <!-- Map Type Selector -->
