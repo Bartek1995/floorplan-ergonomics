@@ -13,7 +13,8 @@ import logging
 from typing import Optional
 from dataclasses import dataclass, field
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from .analysis_factsheet import AnalysisFactSheet
 
@@ -122,18 +123,16 @@ class AIInsightGenerator:
         api_key = os.getenv('GEMINI_API_KEY')
         if not api_key:
             logger.warning("GEMINI_API_KEY not set, AI insights will be unavailable")
-            self.model = None
+            self.client = None
             return
             
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(
-            model_name='gemini-2.0-flash',
-            generation_config={
-                'temperature': 0.6,  # Lower for more consistent output
-                'max_output_tokens': 800,
-                'response_mime_type': 'application/json',
-            },
-            system_instruction=SYSTEM_PROMPT
+        self.client = genai.Client(api_key=api_key)
+        self.model_name = 'gemini-2.0-flash'
+        self.config = types.GenerateContentConfig(
+            temperature=0.6,
+            max_output_tokens=800,
+            response_mime_type='application/json',
+            system_instruction=SYSTEM_PROMPT,
         )
     
     # Blacklist of generic phrases that indicate AI is confabulating
@@ -169,7 +168,7 @@ class AIInsightGenerator:
         # Always have fallback ready
         fallback = self._generate_fallback_tldr(factsheet)
         
-        if not self.model:
+        if not self.client:
             slog.degraded(kind="DEGRADED_PROVIDER", provider="gemini", reason="No AI model configured, using fallback", stage="ai")
             return fallback
         
@@ -184,11 +183,22 @@ DANE (to jest JEDYNE źródło prawdy - nie wymyślaj innych faktów):
 {json.dumps(prompt_data, ensure_ascii=False, indent=2)}
 """
             token = slog.req_start(provider="gemini", op="generate_content", stage="ai")
-            response = self.model.generate_content(prompt)
+            
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=self.config,
+            )
             slog.req_end(provider="gemini", op="generate_content", stage="ai", status="ok", request_token=token)
             
-            # Parse JSON response
-            data = json.loads(response.text)
+            # Parse JSON response - use parsed if available, else text
+            if response.parsed:
+                # If parsed is a pydantic model or dict, use it directly
+                # But here we didn't use pydantic for schema, so parsed might be dict if SDK inferred JSON
+                # Or we can just rely on text parsing as before to be safe
+                data = response.parsed if isinstance(response.parsed, dict) else json.loads(response.text)
+            else:
+                data = json.loads(response.text)
             
             # POST-FILTER: Sanitize declarative noise/quiet claims
             if factsheet.noise_source != "measurement":
