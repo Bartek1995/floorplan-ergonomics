@@ -150,24 +150,20 @@ class ProfileVerdictGenerator:
         if compromise_reason:
             compromise_note = f" Zwróć uwagę na {compromise_reason} – może wymagać weryfikacji w terenie."
         
+        # Use profile-specific verdict flavor if available
+        verdict_flavor = profile.ux_context.get('verdict_flavor', {})
+        
+        score_prefix = f"Lokalizacja uzyskała {score:.0f}/100 dla profilu {profile.emoji} {profile.name}."
+        
         if level == VerdictLevel.RECOMMENDED:
-            base = (
-                f"Lokalizacja uzyskała {score:.0f}/100 dla profilu "
-                f"{profile.emoji} {profile.name}. Spełnia kluczowe kryteria "
-                f"i jest rekomendowana."
-            )
-            return base + compromise_note
+            flavor = verdict_flavor.get('recommended', 'Spełnia kluczowe kryteria i jest rekomendowana.')
+            return f"{score_prefix} {flavor}" + compromise_note
         if level == VerdictLevel.CONDITIONAL:
-            base = (
-                f"Lokalizacja uzyskała {score:.0f}/100 dla profilu "
-                f"{profile.emoji} {profile.name}. Wymaga kompromisów "
-                f"do rozważenia."
-            )
-            return base + cap_note
-        return (
-            f"Lokalizacja uzyskała {score:.0f}/100 dla profilu "
-            f"{profile.emoji} {profile.name}. Nie spełnia kluczowych kryteriów."
-        )
+            flavor = verdict_flavor.get('conditional', 'Wymaga kompromisów do rozważenia.')
+            return f"{score_prefix} {flavor}" + cap_note
+        
+        flavor = verdict_flavor.get('not_recommended', 'Nie spełnia kluczowych kryteriów.')
+        return f"{score_prefix} {flavor}"
 
     def _extract_key_factors(self, scoring_result, level: VerdictLevel) -> List[str]:
         factors: List[str] = []

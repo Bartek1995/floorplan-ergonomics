@@ -10,7 +10,7 @@ Każdy profil zawiera:
 """
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class DecayMode(str, Enum):
@@ -157,6 +157,7 @@ class ProfileConfig:
     thresholds: VerdictThresholds = field(default_factory=VerdictThresholds)
     critical_caps: List[Tuple[str, CriticalCap]] = field(default_factory=list)
     decay_modes: Dict[str, DecayMode] = field(default_factory=dict)
+    ux_context: Dict[str, Any] = field(default_factory=dict)
     
     version: int = 1
     
@@ -206,6 +207,7 @@ class ProfileConfig:
                 {'category': cat, 'threshold': cap.threshold, 'cap': cap.cap}
                 for cat, cap in self.critical_caps
             ],
+            'ux_context': self.ux_context,
             'version': self.version,
         }
 
@@ -252,6 +254,25 @@ PROFILE_URBAN = ProfileConfig(
         (Category.TRANSPORT.value, CriticalCap(threshold=35, cap=65)),
         (Category.FOOD.value, CriticalCap(threshold=25, cap=75)),
     ],
+    
+    ux_context={
+        "report_intro": "Ocena z perspektywy miejskiego stylu życia",
+        "section_okolica": "Twoja miejska okolica",
+        "section_okolica_sub": "Transport, gastronomia i życie po godzinach",
+        "section_preferences": "Co liczy się w mieście",
+        "section_preferences_sub": "Jak miejski styl życia wpływa na ocenę",
+        "praktyce_tips": [
+            "Sprawdź rozkład komunikacji miejskiej w godzinach, których używasz (rano/wieczór)",
+            "Oceń dostępność gastronomii i sklepów wieczorem oraz w weekendy",
+            "Przejdź się po okolicy o 22:00 – oceń atmosferę i bezpieczeństwo",
+        ],
+        "why_not_higher_prefix": "Co ogranicza tę lokalizację dla City Life?",
+        "verdict_flavor": {
+            "recommended": "Doskonała baza do miejskiego stylu życia – wszystko na wyciągnięcie ręki",
+            "conditional": "Dobra lokalizacja miejska, ale z pewnymi kompromisami",
+            "not_recommended": "Ta lokalizacja nie zapewnia komfortu miejskiego życia",
+        },
+    },
 )
 
 
@@ -292,6 +313,25 @@ PROFILE_FAMILY = ProfileConfig(
         (Category.EDUCATION.value, CriticalCap(threshold=35, cap=70)),
         (Category.NATURE_PLACE.value, CriticalCap(threshold=30, cap=75)),
     ],
+    
+    ux_context={
+        "report_intro": "Ocena z perspektywy rodziny z dziećmi",
+        "section_okolica": "Okolica dla Twojej rodziny",
+        "section_okolica_sub": "Szkoły, place zabaw, parki i bezpieczeństwo",
+        "section_preferences": "Co jest ważne dla rodziny",
+        "section_preferences_sub": "Jak priorytety rodziny z dziećmi wpływają na ocenę",
+        "praktyce_tips": [
+            "Sprawdź place zabaw i boiska w okolicy – oceń ich stan i bezpieczeństwo",
+            "Przejdź trasę do najbliższej szkoły/przedszkola pieszo – zmierz czas",
+            "Posłuchaj poziomu hałasu wieczorem (20:00-22:00), gdy dzieci zasypiają",
+        ],
+        "why_not_higher_prefix": "Dlaczego ta lokalizacja nie jest idealna dla rodziny?",
+        "verdict_flavor": {
+            "recommended": "Szkoły, przedszkola i parki w zasięgu – dobra baza dla rodziny",
+            "conditional": "Wymaga kompromisów istotnych z perspektywy rodziny",
+            "not_recommended": "Nie spełnia podstawowych potrzeb rodziny z dziećmi",
+        },
+    },
 )
 
 
@@ -333,6 +373,25 @@ PROFILE_QUIET_GREEN = ProfileConfig(
         (Category.NOISE.value, CriticalCap(threshold=40, cap=60)),
         (Category.NATURE_BACKGROUND.value, CriticalCap(threshold=35, cap=75)),
     ],
+    
+    ux_context={
+        "report_intro": "Ocena z perspektywy miłośnika ciszy i zieleni",
+        "section_okolica": "Twoja zielona okolica",
+        "section_okolica_sub": "Parki, lasy, zieleń i cisza w otoczeniu",
+        "section_preferences": "Co liczy się dla spokojnego życia",
+        "section_preferences_sub": "Jak priorytet ciszy i natury wpływa na ocenę",
+        "praktyce_tips": [
+            "Stań przy oknie na 3-5 minut o różnych porach – oceń poziom ciszy",
+            "Sprawdź najbliższy park/las pieszo – czy trasa jest przyjemna i bezpieczna?",
+            "Oceń widok z okien – czy jest zieleń, czy betonowa zabudowa?",
+        ],
+        "why_not_higher_prefix": "Co zakłóca spokój tej lokalizacji?",
+        "verdict_flavor": {
+            "recommended": "Cicha, zielona okolica – idealna na spokojne życie",
+            "conditional": "Jest zieleń, ale cisza wymaga weryfikacji na miejscu",
+            "not_recommended": "Ta lokalizacja nie zapewnia spokoju i kontaktu z naturą",
+        },
+    },
 )
 
 
@@ -372,6 +431,25 @@ PROFILE_REMOTE_WORK = ProfileConfig(
     critical_caps=[
         (Category.NOISE.value, CriticalCap(threshold=45, cap=70)),
     ],
+    
+    ux_context={
+        "report_intro": "Ocena z perspektywy pracy zdalnej",
+        "section_okolica": "Twoje biuro domowe i okolica",
+        "section_okolica_sub": "Cisza do pracy, przerwy na spacer, podstawowe usługi",
+        "section_preferences": "Co jest ważne przy pracy z domu",
+        "section_preferences_sub": "Jak potrzeby home office wpływają na ocenę",
+        "praktyce_tips": [
+            "Sprawdź poziom hałasu w ciągu dnia (10:00-16:00) – to Twoje godziny pracy",
+            "Oceń opcje na szybki lunch w okolicy – pieszo, bez marnowania przerwy",
+            "Sprawdź, czy w pobliżu jest kawiarnia z WiFi na zmianę otoczenia",
+        ],
+        "why_not_higher_prefix": "Co ogranicza komfort pracy z domu w tej lokalizacji?",
+        "verdict_flavor": {
+            "recommended": "Cicho, wygodnie, z usługami na wyciągnięcie ręki – idealne biuro domowe",
+            "conditional": "Nadaje się do pracy zdalnej, ale cisza wymaga weryfikacji",
+            "not_recommended": "Hałas i brak wygód utrudnią efektywną pracę z domu",
+        },
+    },
 )
 
 
@@ -409,6 +487,25 @@ PROFILE_ACTIVE_SPORT = ProfileConfig(
     thresholds=VerdictThresholds(recommended=65, conditional=45),
     
     critical_caps=[],  # Brak krytycznych
+    
+    ux_context={
+        "report_intro": "Ocena z perspektywy aktywnego trybu życia",
+        "section_okolica": "Twój sportowy teren",
+        "section_okolica_sub": "Obiekty sportowe, trasy biegowe i tereny zielone",
+        "section_preferences": "Co liczy się dla aktywnych",
+        "section_preferences_sub": "Jak potrzeby sportowca wpływają na ocenę",
+        "praktyce_tips": [
+            "Przejdź/przebiegnij trasy w okolicy – sprawdź nawierzchnie i oświetlenie",
+            "Sprawdź godziny otwarcia i cennik najbliższych obiektów sportowych",
+            "Oceń dostępność parków do biegania/kolarstwa – szerokość ścieżek, teren",
+        ],
+        "why_not_higher_prefix": "Czego brakuje tej lokalizacji dla aktywnego stylu życia?",
+        "verdict_flavor": {
+            "recommended": "Obiekty sportowe, parki i trasy w zasięgu – rusz się!",
+            "conditional": "Całkiem dobrze, ale infrastruktura sportowa ma luki",
+            "not_recommended": "Ograniczone możliwości aktywności fizycznej w okolicy",
+        },
+    },
 )
 
 
@@ -450,6 +547,25 @@ PROFILE_CAR_FIRST = ProfileConfig(
     critical_caps=[
         (Category.CAR_ACCESS.value, CriticalCap(threshold=35, cap=70)),
     ],
+    
+    ux_context={
+        "report_intro": "Ocena z perspektywy kierowcy",
+        "section_okolica": "Okolica pod kątem dojazdu",
+        "section_okolica_sub": "Dojazd samochodem, parking, spokój przedmieść",
+        "section_preferences": "Co liczy się pod autem",
+        "section_preferences_sub": "Jak styl życia z samochodem wpływa na ocenę",
+        "praktyce_tips": [
+            "Sprawdź dojazd samochodem w godzinach szczytu (7:30 i 17:00) – zmierz czas",
+            "Oceń dostępność parkingu – czy jest wydzielone miejsce, podziemny garaż?",
+            "Przetestuj wyjazd z osiedla rano – czy są korki, trudne skrzyżowania?",
+        ],
+        "why_not_higher_prefix": "Co utrudnia życie z autem w tej lokalizacji?",
+        "verdict_flavor": {
+            "recommended": "Wygodny dojazd, parking i spokój – idealne pod auto",
+            "conditional": "Dojazd OK, ale sprawdź parking i korki w szczycie",
+            "not_recommended": "Utrudniony dojazd lub brak parkingu w okolicy",
+        },
+    },
 )
 
 
@@ -489,6 +605,25 @@ PROFILE_INVESTOR = ProfileConfig(
     critical_caps=[
         (Category.TRANSPORT.value, CriticalCap(threshold=30, cap=65)),  # Transport krytyczny
     ],
+    
+    ux_context={
+        "report_intro": "Ocena potencjału inwestycyjnego lokalizacji",
+        "section_okolica": "Okolica okiem inwestora",
+        "section_okolica_sub": "Transport, infrastruktura i potencjał najmu",
+        "section_preferences": "Co przyciąga najemców",
+        "section_preferences_sub": "Jak atrakcyjność dla najemców wpływa na ocenę",
+        "praktyce_tips": [
+            "Sprawdź oferty najmu w okolicy – jaka jest stawka za m² i obłożenie?",
+            "Oceń grupę docelową najemców (studenci, młodzi profesjonaliści, rodziny)",
+            "Zweryfikuj plany zagospodarowania przestrzennego – co powstanie w okolicy?",
+        ],
+        "why_not_higher_prefix": "Co ogranicza potencjał inwestycyjny tej lokalizacji?",
+        "verdict_flavor": {
+            "recommended": "Wysoki potencjał najmu – transport i infrastruktura na miejscu",
+            "conditional": "Umiarkowany potencjał – niektóre braki mogą ograniczyć zysk",
+            "not_recommended": "Niski potencjał najmu – trudno będzie znaleźć najemcę",
+        },
+    },
 )
 
 
@@ -527,6 +662,25 @@ PROFILE_CUSTOM = ProfileConfig(
     
     thresholds=VerdictThresholds(recommended=65, conditional=45),
     critical_caps=[],  # Brak critical caps - użytkownik ma pełną kontrolę
+    
+    ux_context={
+        "report_intro": "Ocena według Twoich własnych kryteriów",
+        "section_okolica": "Okolica według Twoich priorytetów",
+        "section_okolica_sub": "Analiza dopasowana do ustawionych parametrów",
+        "section_preferences": "Twoje własne priorytety",
+        "section_preferences_sub": "Jak ustawione parametry wpłynęły na ocenę",
+        "praktyce_tips": [
+            "Porównaj wynik z analizą dla innego profilu – jakie różnice?",
+            "Zweryfikuj najważniejsze dla Ciebie kategorie podczas wizyty na miejscu",
+            "Oceń, czy Twoje priorytety odzwierciedlają codzienne potrzeby",
+        ],
+        "why_not_higher_prefix": "Co obniża ocenę według Twoich kryteriów?",
+        "verdict_flavor": {
+            "recommended": "Lokalizacja spełnia Twoje indywidualne kryteria",
+            "conditional": "Częściowo pasuje do Twoich preferencji – sprawdź kompromisy",
+            "not_recommended": "Nie spełnia kluczowych kryteriów, które wyznaczyłeś",
+        },
+    },
 )
 
 

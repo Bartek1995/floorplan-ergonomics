@@ -158,6 +158,7 @@ export interface ProfileData {
     threshold: number;
     cap: number;
   }>;
+  ux_context?: Record<string, any>;
   version?: number;
 }
 
@@ -243,7 +244,7 @@ export interface AnalysisReport {
   // Generation parameters
   generation_params?: {
     generated_at: string;
-    profile: { key: string; name: string; emoji: string };
+    profile: { key: string; name: string; emoji: string; ux_context?: Record<string, any> };
     radii: Record<string, number>;
     fetch_radius: number;
     poi_provider: string;

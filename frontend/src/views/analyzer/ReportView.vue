@@ -313,6 +313,33 @@ const dataQuality = computed(() => {
   return (report.value as any)?.generation_params?.data_quality || null;
 });
 
+// Profile UX context - personalized texts per profile
+const profileContext = computed(() => {
+  const ux = report.value?.profile?.ux_context ||
+             report.value?.generation_params?.profile?.ux_context ||
+             (report.value as any)?.profile?.ux_context ||
+             {};
+  
+  const profileName = report.value?.profile?.name ||
+                      report.value?.generation_params?.profile?.name ||
+                      'wybrany profil';
+  
+  return {
+    reportIntro: ux.report_intro || 'Ocena lokalizacji',
+    sectionOkolica: ux.section_okolica || 'Okolica',
+    sectionOkolicaSub: ux.section_okolica_sub || 'Analiza lokalizacji i punktów POI',
+    sectionPreferences: ux.section_preferences || 'Twoje preferencje – wpływ na ocenę',
+    sectionPreferencesSub: ux.section_preferences_sub || 'Jak Twoje ustawienia wpłynęły na wynik',
+    praktyceTips: ux.praktyce_tips || [
+      'Porównaj z innymi lokalizacjami, które rozważasz',
+      'Zwróć uwagę na wskazane kompromisy podczas oględzin',
+      'Sprawdź porę dnia i hałas, jeśli to dla Ciebie istotne',
+    ],
+    whyNotHigherPrefix: ux.why_not_higher_prefix || 'Dlaczego nie wyższa ocena?',
+    profileName,
+  };
+});
+
 // UNIFIED CONFIDENCE - single source of truth
 // Prefers data_quality.confidence_pct (from coverage analysis) over legacy verdict.confidence
 const unifiedConfidence = computed(() => {
@@ -1434,20 +1461,12 @@ onMounted(async () => {
           <div class="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
             <h4 class="font-semibold text-slate-700 mb-2 flex items-center gap-2">
               <i class="pi pi-info-circle"></i>
-              Co to oznacza w praktyce
+              Co sprawdzić podczas wizyty
             </h4>
             <ul class="space-y-1.5 text-sm text-slate-600">
-              <li class="flex items-start gap-2">
+              <li v-for="(tip, idx) in profileContext.praktyceTips" :key="idx" class="flex items-start gap-2">
                 <span class="text-slate-400">•</span>
-                <span>Porównaj z innymi lokalizacjami, które rozważasz</span>
-              </li>
-              <li class="flex items-start gap-2">
-                <span class="text-slate-400">•</span>
-                <span>Zwróć uwagę na wskazane kompromisy podczas oględzin</span>
-              </li>
-              <li class="flex items-start gap-2">
-                <span class="text-slate-400">•</span>
-                <span>Sprawdź porę dnia i hałas, jeśli to dla Ciebie istotne</span>
+                <span>{{ tip }}</span>
               </li>
             </ul>
           </div>
@@ -1459,7 +1478,7 @@ onMounted(async () => {
                 <i class="pi pi-question-circle text-amber-600"></i>
               </div>
               <div>
-                <h4 class="font-semibold text-amber-800 mb-1">Dlaczego nie wyższa ocena?</h4>
+                <h4 class="font-semibold text-amber-800 mb-1">{{ profileContext.whyNotHigherPrefix }}</h4>
                 <p class="text-sm text-amber-700">
                   Główne ograniczenie: <strong>{{ mainLimitingFactor.reason }}</strong>
                 </p>
@@ -1540,8 +1559,8 @@ onMounted(async () => {
               <i class="pi pi-sliders-h text-xl text-white"></i>
             </div>
             <div>
-              <h3 class="font-bold text-xl text-slate-800">Twoje preferencje – wpływ na ocenę</h3>
-              <p class="text-sm text-slate-500">Jak Twoje ustawienia wpłynęły na wynik</p>
+              <h3 class="font-bold text-xl text-slate-800">{{ profileContext.sectionPreferences }}</h3>
+              <p class="text-sm text-slate-500">{{ profileContext.sectionPreferencesSub }}</p>
             </div>
           </div>
           
@@ -1717,8 +1736,8 @@ onMounted(async () => {
                 <i class="pi pi-map text-xl text-white"></i>
               </div>
               <div>
-                <h2 class="text-xl font-bold text-slate-800">Okolica</h2>
-                <p class="text-sm text-slate-500">Analiza lokalizacji i punktów POI</p>
+                <h2 class="text-xl font-bold text-slate-800">{{ profileContext.sectionOkolica }}</h2>
+                <p class="text-sm text-slate-500">{{ profileContext.sectionOkolicaSub }}</p>
               </div>
             </div>
             
