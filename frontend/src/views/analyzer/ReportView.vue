@@ -49,7 +49,6 @@ const mapTypeOptions = [
   { label: 'Google Maps', value: 'google' },
 ];
 const selectedMapType = ref<MapType>('osm');
-const googleMapsLoaded = ref(false);
 const googleMapsError = ref('');
 
 // State
@@ -63,7 +62,6 @@ const googleMap = ref<google.maps.Map | null>(null);
 const googleMarkers = ref<GoogleMarkerEntry[]>([]);
 const leafletPoiMarkers = ref<L.CircleMarker[]>([]);
 const googleMapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
-let googleMapsLoadPromise: Promise<void> | null = null;
 
 // DEV mode toggle (persisted in localStorage via SettingsDrawer)
 const devMode = ref(false);
@@ -752,44 +750,64 @@ function getBadgeLabel(badge: string): string {
 }
 
 // Load Google Maps API dynamically
-function loadGoogleMapsApi(): Promise<void> {
-  if (window.google?.maps) {
-    googleMapsLoaded.value = true;
-    return Promise.resolve();
-  }
-  if (googleMapsLoadPromise) {
-    return googleMapsLoadPromise;
-  }
+// Google Maps Bootstrap Loader — uses Google's recommended inline bootstrap
+function loadGoogleMapsScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Already bootstrapped
+    if ((window as any).google?.maps?.importLibrary) {
+      resolve();
+      return;
+    }
 
-  googleMapsLoadPromise = new Promise((resolve, reject) => {
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     if (!apiKey || apiKey === 'your_google_maps_api_key_here') {
-      googleMapsError.value = 'Brak klucza Google Maps API. Dodaj VITE_GOOGLE_MAPS_API_KEY do pliku .env';
-      googleMapsLoadPromise = null;
+      googleMapsError.value = 'Brak klucza Google Maps API';
       reject(new Error('Missing Google Maps API key'));
       return;
     }
 
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async&v=weekly&libraries=places,marker&language=pl&region=PL`;
-    script.async = true;
-    script.defer = true;
+    // Google's inline bootstrap
+    ((g: any) => {
+      let h: any, a: any, k: any;
+      const p = "The Google Maps JavaScript API";
+      const c = "google";
+      const l = "importLibrary";
+      const q = "__ib__";
+      const m = document;
+      let b = (window as any);
+      b = b[c] || (b[c] = {});
+      const d = b.maps || (b.maps = {});
+      const r = new Set<string>();
+      const e = new URLSearchParams();
+      const u = () =>
+        // @ts-ignore
+        h || (h = new Promise(async (f: any, n: any) => {
+          await (a = m.createElement("script"));
+          e.set("libraries", [...r] + "");
+          for (k in g)
+            e.set(
+              k.replace(/[A-Z]/g, (t: string) => "_" + t[0]!.toLowerCase()),
+              g[k] as string,
+            );
+          e.set("callback", c + ".maps." + q);
+          a.src = `https://maps.googleapis.com/maps/api/js?` + e;
+          d[q] = f;
+          a.onerror = () => (h = n(Error(p + " could not load.")));
+          a.nonce = (m.querySelector("script[nonce]") as any)?.nonce || "";
+          m.head.append(a);
+        }));
+      d[l]
+        ? console.warn(p + " only loads once. Ignoring:", g)
+        : (d[l] = (f: string, ...n: any[]) => (r.add(f), u().then(() => d[l](f, ...n))));
+    })({
+      key: apiKey,
+      v: "weekly",
+      language: "pl",
+      region: "PL",
+    });
 
-    script.onload = () => {
-      googleMapsLoaded.value = true;
-      resolve();
-    };
-
-    script.onerror = () => {
-      googleMapsLoadPromise = null;
-      googleMapsError.value = 'Nie udało się załadować Google Maps API';
-      reject(new Error('Failed to load Google Maps'));
-    };
-
-    document.head.appendChild(script);
+    resolve();
   });
-
-  return googleMapsLoadPromise;
 }
 // Cleanup maps
 function cleanupMaps() {
@@ -863,102 +881,93 @@ async function initGoogleMap() {
   if (!report.value?.listing.latitude || !report.value?.listing.longitude || !mapContainer.value) return;
 
   try {
-    await loadGoogleMapsApi();
-    if (typeof window.google?.maps?.importLibrary === 'function') {
-      await Promise.all([
-        window.google.maps.importLibrary('maps'),
-        window.google.maps.importLibrary('marker'),
-      ]);
-    }
-  } catch {
-    return;
-  }
+    await loadGoogleMapsScript();
+    
+    // Import libraries explicitly
+    const { Map } = await window.google.maps.importLibrary("maps") as google.maps.MapsLibrary;
+    const { AdvancedMarkerElement, PinElement } = await window.google.maps.importLibrary("marker") as google.maps.MarkerLibrary;
 
-  cleanupMaps();
+    cleanupMaps();
 
-  const markerApi = window.google.maps.marker;
-  const AdvancedMarkerElement = markerApi?.AdvancedMarkerElement;
-  if (!AdvancedMarkerElement) {
-    googleMapsError.value = 'Biblioteka markerów Google Maps nie jest dostępna';
-    return;
-  }
+    const lat = report.value.listing.latitude;
+    const lon = report.value.listing.longitude;
 
-  const lat = report.value.listing.latitude;
-  const lon = report.value.listing.longitude;
+    googleMap.value = new Map(mapContainer.value, {
+      center: { lat, lng: lon },
+      zoom: 15,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+      mapId: googleMapId,
+    });
 
-  googleMap.value = new window.google.maps.Map(mapContainer.value, {
-    center: { lat, lng: lon },
-    zoom: 15,
-    mapTypeId: 'roadmap',
-    mapId: googleMapId,
-  });
+    const mainPin = new PinElement({ background: '#2563EB', borderColor: '#ffffff', glyphColor: '#ffffff' });
 
-  const mainPin = markerApi?.PinElement
-    ? new markerApi.PinElement({ background: '#2563EB', borderColor: '#ffffff', glyphColor: '#ffffff' })
-    : null;
+    const mainMarker = new AdvancedMarkerElement({
+      position: { lat, lng: lon },
+      map: googleMap.value,
+      title: report.value.listing.title || 'Nieruchomość',
+      gmpClickable: true,
+      content: mainPin,
+    });
 
-  const mainMarker = new AdvancedMarkerElement({
-    position: { lat, lng: lon },
-    map: googleMap.value,
-    title: report.value.listing.title || 'Nieruchomość',
-    gmpClickable: true,
-    ...(mainPin ? { content: mainPin.element } : {}),
-  });
+    const infoWindow = new window.google.maps.InfoWindow({
+      content: `<b>${report.value.listing.title || 'Nieruchomość'}</b>`,
+    });
+    
+    infoWindow.open({
+      map: googleMap.value,
+      anchor: mainMarker,
+    });
 
-  const infoWindow = new window.google.maps.InfoWindow({
-    content: `<b>${report.value.listing.title || 'Nieruchomość'}</b>`,
-  });
-  infoWindow.open({
-    map: googleMap.value,
-    anchor: mainMarker,
-  });
+    googleMarkers.value.push({
+      marker: mainMarker,
+      infoWindow,
+    });
 
-  googleMarkers.value.push({
-    marker: mainMarker,
-    infoWindow,
-  });
+    if (report.value.neighborhood.markers) {
+      report.value.neighborhood.markers.forEach((poi) => {
+        const color = poi.color || '#3B82F6';
+        const isVisible = categoryVisibility.value[poi.category] !== false;
 
-  if (report.value.neighborhood.markers) {
-    report.value.neighborhood.markers.forEach((poi) => {
-      const color = poi.color || '#3B82F6';
-      const isVisible = categoryVisibility.value[poi.category] !== false;
-
-      const poiPin = markerApi?.PinElement
-        ? new markerApi.PinElement({
+        const poiPin = new PinElement({
             background: color,
             borderColor: '#ffffff',
             glyphColor: '#ffffff',
             scale: 0.85,
-          })
-        : null;
+          });
 
-      const poiMarker = new AdvancedMarkerElement({
-        position: { lat: poi.lat, lng: poi.lon },
-        map: isVisible ? googleMap.value : null,
-        title: poi.name,
-        gmpClickable: true,
-        ...(poiPin ? { content: poiPin.element } : {}),
-      });
+        const poiMarker = new AdvancedMarkerElement({
+          position: { lat: poi.lat, lng: poi.lon },
+          map: isVisible ? googleMap.value : null,
+          title: poi.name,
+          gmpClickable: true,
+          content: poiPin,
+        });
 
-      const poiInfoWindow = new window.google.maps.InfoWindow({
-        content: `<b>${poi.name}</b><br><span style="font-size: 12px; color: #666;">${poi.subcategory} (${Math.round(poi.distance || 0)}m)</span>`,
-      });
+        const poiInfoWindow = new window.google.maps.InfoWindow({
+          content: `<b>${poi.name}</b><br><span style="font-size: 12px; color: #666;">${poi.subcategory} (${Math.round(poi.distance || 0)}m)</span>`,
+        });
 
-      poiMarker.addListener('click', () => {
-        poiInfoWindow.open({
-          map: googleMap.value,
-          anchor: poiMarker,
+        poiMarker.addListener('gmp-click', () => {
+          poiInfoWindow.open({
+            map: googleMap.value,
+            anchor: poiMarker,
+          });
+        });
+
+        googleMarkers.value.push({
+          marker: poiMarker,
+          category: poi.category,
+          name: poi.name,
+          subcategory: poi.subcategory,
+          infoWindow: poiInfoWindow,
         });
       });
-
-      googleMarkers.value.push({
-        marker: poiMarker,
-        category: poi.category,
-        name: poi.name,
-        subcategory: poi.subcategory,
-        infoWindow: poiInfoWindow,
-      });
-    });
+    }
+  } catch (e) {
+    console.error('Error initializing Google Maps:', e);
+    googleMapsError.value = 'Wystąpił błąd podczas inicjalizacji mapy';
   }
 }
 function initMap() {
@@ -1059,7 +1068,8 @@ onMounted(async () => {
           router.replace({ name: 'report-public', params: { publicId: report.value.public_id } });
         }
         
-        nextTick(initMap);
+        await nextTick();
+        initMap();
         return;
       } catch (e) {
         console.error('Błąd parsowania raportu z sessionStorage', e);
@@ -1073,11 +1083,12 @@ onMounted(async () => {
     isLoading.value = true;
     try {
       report.value = await analyzerApi.getReportByPublicId(publicId);
-      nextTick(initMap);
     } catch (e) {
       error.value = 'Nie udało się pobrać raportu. Sprawdź czy link jest poprawny.';
     } finally {
       isLoading.value = false;
+      await nextTick();
+      initMap();
     }
     return;
   }
@@ -1088,11 +1099,12 @@ onMounted(async () => {
     isLoading.value = true;
     try {
       report.value = await analyzerApi.getHistoryDetail(Number(id));
-      nextTick(initMap);
     } catch (e) {
       error.value = 'Nie udało się pobrać raportu';
     } finally {
       isLoading.value = false;
+      await nextTick();
+      initMap();
     }
     return;
   }
