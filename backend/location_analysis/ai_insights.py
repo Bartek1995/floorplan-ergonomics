@@ -13,8 +13,7 @@ import logging
 from typing import Optional
 from dataclasses import dataclass, field
 
-from google import genai
-from google.genai import types as genai_types
+import google.generativeai as genai
 
 from .analysis_factsheet import AnalysisFactSheet
 
@@ -119,21 +118,22 @@ SPÓJNOŚĆ:
 class AIInsightGenerator:
     """Generates human-readable decision insights using Gemini."""
     
-    MODEL_NAME = 'gemini-2.0-flash'
-
     def __init__(self):
         api_key = os.getenv('GEMINI_API_KEY')
         if not api_key:
             logger.warning("GEMINI_API_KEY not set, AI insights will be unavailable")
-            self.client = None
+            self.model = None
             return
-
-        self.client = genai.Client(api_key=api_key)
-        self._generation_config = genai_types.GenerateContentConfig(
-            temperature=0.6,
-            max_output_tokens=800,
-            response_mime_type='application/json',
-            system_instruction=SYSTEM_PROMPT,
+            
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel(
+            model_name='gemini-2.0-flash',
+            generation_config={
+                'temperature': 0.6,  # Lower for more consistent output
+                'max_output_tokens': 800,
+                'response_mime_type': 'application/json',
+            },
+            system_instruction=SYSTEM_PROMPT
         )
     
     # Blacklist of generic phrases that indicate AI is confabulating
@@ -169,14 +169,14 @@ class AIInsightGenerator:
         # Always have fallback ready
         fallback = self._generate_fallback_tldr(factsheet)
         
-        if not self.client:
+        if not self.model:
             slog.degraded(kind="DEGRADED_PROVIDER", provider="gemini", reason="No AI model configured, using fallback", stage="ai")
             return fallback
-
+        
         try:
             # Convert factsheet to AI-safe JSON
             prompt_data = factsheet.to_ai_prompt_json()
-
+            
             prompt = f"""
 Wygeneruj insights dla tego raportu lokalizacyjnego.
 
@@ -184,11 +184,7 @@ DANE (to jest JEDYNE źródło prawdy - nie wymyślaj innych faktów):
 {json.dumps(prompt_data, ensure_ascii=False, indent=2)}
 """
             token = slog.req_start(provider="gemini", op="generate_content", stage="ai")
-            response = self.client.models.generate_content(
-                model=self.MODEL_NAME,
-                contents=prompt,
-                config=self._generation_config,
-            )
+            response = self.model.generate_content(prompt)
             slog.req_end(provider="gemini", op="generate_content", stage="ai", status="ok", request_token=token)
             
             # Parse JSON response

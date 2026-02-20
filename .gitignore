@@ -129,3 +129,6 @@ examples/
 
 # copilot
 .github/copilot-instructions.md
+
+# Claude Code
+.claude/agents/
