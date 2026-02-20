@@ -213,9 +213,7 @@ Dzielnica oferuje świetną infrastrukturę edukacyjną i zieleń."
 - Widoczne w pierwszych 3 sekundach po załadowaniu raportu
 - Skrót umożliwiający szybką eliminację lokalizacji
 
----
-
-### 8. Frontend (Vue 3 + TypeScript)
+### 8. Frontend (Vue 3 + Tailwind CSS + TypeScript)
 **Status:** ✅ ZAIMPLEMENTOWANE  
 
 **Funkcjonalności:**
@@ -227,22 +225,42 @@ Dzielnica oferuje świetną infrastrukturę edukacyjną i zieleń."
   - Category breakdown (radar chart)
   - Preferences impact (top contributors / limiting factors)
   - Map views (POI clusters)
+  - Sekcja dynamicznych parametrów zapytania
+- **Property Data Contract** - wyraźne odseparowanie danych podanych przez użytkownika ("Z ogłoszenia") od danych wyliczonych
 - **Historia analiz** (localStorage)
 - **Selektor profilu** - 4 persony + custom preferences
-- **Responsive design** - mobile-first
+- **Responsive design** - Nefa-style aesthetic, mobile-first
 
 **Stack:**
 - Vue 3 (Composition API)
 - TypeScript
+- Tailwind CSS (Nefa-style gradients & typography)
 - PrimeVue (UI components)
 - Leaflet (mapy)
 - Chart.js (wykresy)
 
-Frontend wystarczający do sprzedaży MVP i beta-testów.
+Frontend gotowy, z optymalnym wizualnie wsparciem User Experience (mikroanimacje, czytelność danych).
 
 ---
 
-### 9. Backend (Django 5.2)
+### 9. Data Quality & Observability (Backend Intelligence)
+**Status:** ✅ ZAIMPLEMENTOWANE  
+**Impact:** 🔥🔥🔥 KRYTYCZNY (Dla stabilności i wiarygodności raportu)
+
+**Struktura:**
+1. **Data Quality Report (Separacja błędów geo vs listing):**
+   - System potrafi semantycznie odróżnić *brak danych* ("zero szkół wyplutych w promieniu 1 km") od *błędu dostawcy* ("Google Places zwróciło timeout 504").
+   - Pusty wynik (Empty Signal) traktowany jest jako prawidłowa wartość wpływająca na ostateczny raport (rzeczywiście nie ma tam szkół), podczas gdy *błąd dostawcy* obniża ostateczne `confidence_pct` raportu (aby uchronić użytkownika przed podjęciem decyzji na zafałszowanych lub uciętych danych).
+
+2. **Structured Diagnostic Logging:**
+   - Cichy strażnik działający w tle aplikacji `location_analysis`.
+   - Pipeline loguje kluczowe wskaźniki przy pomocy formatu `key=value` z polami takimi jak `trace_id`, `public_id`, `stage`, `provider`, co ułatwia debugowanie dla programisty.
+   - Wbudowane checkpointy (`count_raw` vs `count_kept`) monitorują przepływ danych po nakładaniu promieni wyszukiwania lub odfiltrowywaniu niechcianych typów POI.
+   - Diagnostyka automatycznie podnosi flagi (np. `DEGRADED_PROVIDER`, `PARTIAL_DATA`) jeśli Google API zaczyna limitować odpytania.
+
+---
+
+### 10. Backend (Django 5.2)
 **Status:** ✅ ZAIMPLEMENTOWANE  
 
 **Architektura:**
@@ -324,7 +342,7 @@ graph TD
 
 ## 🚧 Planowane rozszerzenia (High Impact)
 
-### 10. Custom Scoring (suwaki wag)
+### 11. Custom Scoring (suwaki wag)
 **Status:** ❌ BRAK  
 **Ciężkość:** 🟡 Średnia  
 **Impact:** 🔥 WYSOKI
@@ -339,7 +357,7 @@ graph TD
 
 ---
 
-### 11. Ukryte ryzyka lokalizacji
+### 12. Ukryte ryzyka lokalizacji
 **Status:** ❌ BRAK  
 **Ciężkość:** 🟡 Średnia  
 **Impact:** 🔥🔥 BARDZO WYSOKI
@@ -357,7 +375,7 @@ graph TD
 
 ---
 
-### 12. Jakość życia w czasie (perspektywa 3-5 lat)
+### 13. Jakość życia w czasie (perspektywa 3-5 lat)
 **Status:** ❌ BRAK  
 **Ciężkość:** 🟡 Średnia  
 **Impact:** 🔥 WYSOKI
@@ -370,7 +388,7 @@ graph TD
 
 ---
 
-### 13. Edukacja - obłożenie szkół
+### 14. Edukacja - obłożenie szkół
 **Status:** ❌ BRAK  
 **Ciężkość:** 🟡 Średnia  
 **Impact:** 🔥 WYSOKI (dla Family profile)
@@ -383,7 +401,7 @@ graph TD
 
 ---
 
-### 14. Środowisko i zdrowie
+### 15. Środowisko i zdrowie
 **Status:** ❌ BRAK  
 **Ciężkość:** 🟢 Niska (API publiczne)  
 **Impact:** 🔥 WYSOKI
@@ -396,7 +414,7 @@ graph TD
 
 ---
 
-### 15. Nasłonecznienie i ekspozycja
+### 16. Nasłonecznienie i ekspozycja
 **Status:** ❌ BRAK  
 **Ciężkość:**  
 - 🟢 Prosta heurystyka (kierunek świata + wysokość zabudowy)
