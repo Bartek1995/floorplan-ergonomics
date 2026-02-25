@@ -165,6 +165,8 @@ CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL', 'True').lower() in ('true',
 # =============================================================================
 LOKTIS_CONFIG = {
     # --- Overpass API ---
+    'OVERPASS_MODE': os.getenv('OVERPASS_MODE', 'public'),
+    'OVERPASS_LOCAL_URL': os.getenv('OVERPASS_LOCAL_URL', 'http://localhost:12345/api/interpreter'),
     'OVERPASS_URL': os.getenv('OVERPASS_URL', 'https://overpass-api.de/api/interpreter'),
     'OVERPASS_FALLBACK_URLS': os.getenv(
         'OVERPASS_FALLBACK_URLS',

@@ -23,6 +23,8 @@ class AppConfig:
     """Centralna konfiguracja aplikacji."""
 
     # --- Overpass API ---
+    overpass_mode: str = "public"  # 'public' lub 'local'
+    overpass_local_url: str = "http://localhost:12345/api/interpreter"
     overpass_url: str = "https://overpass-api.de/api/interpreter"
     overpass_fallback_urls: List[str] = field(default_factory=lambda: [
         "https://lz4.overpass-api.de/api/interpreter",
@@ -66,7 +68,11 @@ class AppConfig:
     @property
     def overpass_endpoints(self) -> List[str]:
         """Zwraca pełną listę endpointów Overpass (primary + fallbacki)."""
-        endpoints = [self.overpass_url]
+        endpoints = []
+        if self.overpass_mode == 'local' and self.overpass_local_url:
+            endpoints.append(self.overpass_local_url)
+        elif self.overpass_url:
+            endpoints.append(self.overpass_url)
         for url in self.overpass_fallback_urls:
             url = url.strip()
             if url and url not in endpoints:
@@ -79,6 +85,8 @@ class AppConfig:
         """
         return {
             "overpass": {
+                "mode": self.overpass_mode,
+                "local_url": self.overpass_local_url,
                 "url": self.overpass_url,
                 "fallback_urls": self.overpass_fallback_urls,
                 "timeout": self.overpass_timeout,
@@ -168,6 +176,8 @@ def get_config() -> AppConfig:
         defaults = AppConfig()
         _config_instance = AppConfig(
             # Overpass
+            overpass_mode=raw.get('OVERPASS_MODE', defaults.overpass_mode),
+            overpass_local_url=raw.get('OVERPASS_LOCAL_URL', defaults.overpass_local_url),
             overpass_url=raw.get('OVERPASS_URL', defaults.overpass_url),
             overpass_fallback_urls=_parse_list(
                 raw.get('OVERPASS_FALLBACK_URLS'),
