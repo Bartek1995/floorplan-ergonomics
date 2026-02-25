@@ -1,8 +1,9 @@
 """
-Klient do Google Places API (Nearby Search).
-Alternatywa dla Overpass do pobierania POI.
+Klient do Google Places API (New) — searchNearby + Place Details.
+Używa nowych endpointów places.googleapis.com/v1/.
 """
 import os
+import time
 import requests
 import math
 import logging
@@ -116,9 +117,29 @@ def google_types_to_secondary(types: List[str]) -> List[str]:
 
 
 class GooglePlacesClient:
-    """Klient do pobierania POI z Google Places API."""
+    """Klient do pobierania POI z Google Places API (New)."""
     
-    NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    NEARBY_SEARCH_URL = "https://places.googleapis.com/v1/places:searchNearby"
+    PLACE_DETAILS_URL = "https://places.googleapis.com/v1/places/"
+    
+    # Pola do Nearby Search (Pro SKU — tańsze, bez rating/reviews)
+    # Rating/reviews pobieramy osobno w enrichment (Text Search) — tylko dla top-k POI
+    NEARBY_FIELD_MASK = ",".join([
+        "places.id",
+        "places.displayName",
+        "places.location",
+        "places.types",
+    ])
+    
+    # Pola do Place Details (Enterprise SKU)
+    DETAILS_FIELD_MASK = ",".join([
+        "id",
+        "displayName",
+        "location",
+        "types",
+        "rating",
+        "userRatingCount",
+    ])
     
     # Typy Google do wyszukiwania per kategoria
     SEARCH_TYPES = {
@@ -132,11 +153,62 @@ class GooglePlacesClient:
         'finance': ['bank', 'atm'],
     }
     
+    MAX_RETRIES = 2
+    
     def __init__(self, api_key: Optional[str] = None):
         """Inicjalizacja z kluczem API."""
         self.api_key = api_key or os.environ.get('GOOGLE_PLACES_API_KEY')
         if not self.api_key:
             logger.warning("GOOGLE_PLACES_API_KEY not set!")
+    
+    def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        max_retries: int = None,
+        trace_ctx=None,
+        **kwargs,
+    ) -> requests.Response:
+        """HTTP request z retry i exponential backoff dla 429/5xx."""
+        retries = max_retries if max_retries is not None else self.MAX_RETRIES
+        kwargs.setdefault('timeout', 10)
+        
+        last_response = None
+        for attempt in range(retries + 1):
+            try:
+                response = requests.request(method, url, **kwargs)
+                last_response = response
+                
+                # Retry na 429 (rate limit) i 5xx (server error)
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < retries:
+                        wait = 0.5 * (2 ** attempt)
+                        logger.debug("Retry %d/%d for %s (status=%d), waiting %.1fs",
+                                     attempt + 1, retries, url, response.status_code, wait)
+                        time.sleep(wait)
+                        continue
+                
+                return response
+                
+            except (requests.Timeout, requests.ConnectionError) as e:
+                last_response = None
+                if attempt < retries:
+                    wait = 0.5 * (2 ** attempt)
+                    logger.debug("Retry %d/%d for %s (%s), waiting %.1fs",
+                                 attempt + 1, retries, url, type(e).__name__, wait)
+                    time.sleep(wait)
+                    continue
+                raise
+        
+        return last_response
+    
+    def _make_headers(self, field_mask: str) -> dict:
+        """Tworzy nagłówki dla Places API (New)."""
+        return {
+            'X-Goog-Api-Key': self.api_key,
+            'X-Goog-FieldMask': field_mask,
+            'Content-Type': 'application/json',
+        }
     
     def get_pois_around(
         self,
@@ -146,7 +218,9 @@ class GooglePlacesClient:
         trace_ctx: 'AnalysisTraceContext | None' = None,
     ) -> Tuple[Dict[str, List[POI]], Dict[str, Any]]:
         """
-        Pobiera POI z Google Places API.
+        Pobiera POI z Google Places API (New).
+        
+        Używa batch types per kategoria — 1 request per kategoria zamiast per typ.
         
         Returns:
             tuple: (pois_by_category, metrics) - ten sam format co OverpassClient
@@ -167,23 +241,22 @@ class GooglePlacesClient:
         
         nature_metrics = NatureMetrics()
         
-        # Wykonaj wyszukiwanie dla każdej kategorii
+        # Wykonaj wyszukiwanie per KATEGORIA (batch types!)
         for our_category, google_types in self.SEARCH_TYPES.items():
-            for google_type in google_types:
-                try:
-                    results = self._search_nearby(lat, lon, radius_m, google_type, trace_ctx=ctx)
-                    
-                    for place in results:
-                        poi = self._create_poi_from_place(place, our_category, lat, lon)
-                        if poi:
-                            pois_by_category[our_category].append(poi)
+            try:
+                results = self._search_nearby(lat, lon, radius_m, google_types, trace_ctx=ctx)
+                
+                for place in results:
+                    poi = self._create_poi_from_place(place, our_category, lat, lon)
+                    if poi:
+                        pois_by_category[our_category].append(poi)
+                        
+                        # Aktualizuj nature metrics dla parków
+                        if our_category == 'nature_place' and poi.subcategory == 'park':
+                            nature_metrics.add_park(poi.distance_m)
                             
-                            # Aktualizuj nature metrics dla parków
-                            if our_category == 'nature_place' and poi.subcategory == 'park':
-                                nature_metrics.add_park(poi.distance_m)
-                                
-                except Exception as e:
-                    slog.warning(stage="geo", provider="google", op="search_nearby", message=str(e), error_class="runtime", meta={"google_type": google_type})
+            except Exception as e:
+                slog.warning(stage="geo", provider="google", op="search_nearby", message=str(e), error_class="runtime", meta={"google_types": google_types})
         
         # Deduplikacja i limitowanie
         for cat in pois_by_category:
@@ -223,36 +296,66 @@ class GooglePlacesClient:
         lat: float, 
         lon: float, 
         radius_m: int, 
-        place_type: str,
+        place_types: List[str],
         trace_ctx: 'AnalysisTraceContext | None' = None,
     ) -> List[dict]:
-        """Wykonuje Nearby Search dla jednego typu."""
+        """
+        Wykonuje Nearby Search (New) dla listy typów.
+        
+        Nowe API akceptuje wiele typów w jednym zapytaniu (includedTypes),
+        co redukuje liczbę requestów.
+        """
         from ..diagnostics import get_diag_logger, AnalysisTraceContext
         ctx = trace_ctx or AnalysisTraceContext()
         slog = get_diag_logger(__name__, ctx)
 
-        params = {
-            'location': f"{lat},{lon}",
-            'radius': radius_m,
-            'type': place_type,
-            'key': self.api_key,
+        body = {
+            'includedTypes': place_types,
+            'maxResultCount': 20,
+            'locationRestriction': {
+                'circle': {
+                    'center': {
+                        'latitude': lat,
+                        'longitude': lon,
+                    },
+                    'radius': float(radius_m),
+                }
+            },
+            'languageCode': 'pl',
         }
         
-        token = slog.req_start(provider="google", op="search_nearby", stage="geo", meta={"type": place_type})
+        headers = self._make_headers(self.NEARBY_FIELD_MASK)
         
-        response = requests.get(self.NEARBY_SEARCH_URL, params=params, timeout=10)
-        response.raise_for_status()
+        token = slog.req_start(provider="google", op="search_nearby", stage="geo", meta={"types": place_types})
         
-        data = response.json()
-        api_status = data.get('status', '')
+        response = self._request_with_retry(
+            'POST', self.NEARBY_SEARCH_URL,
+            json=body, headers=headers,
+        )
         
-        if api_status not in ['OK', 'ZERO_RESULTS']:
-            slog.req_end(provider="google", op="search_nearby", stage="geo", status="error", request_token=token, http_status=response.status_code, provider_code=api_status, message=data.get('error_message', ''))
+        if response is None:
+            slog.req_end(provider="google", op="search_nearby", stage="geo", status="error", request_token=token, http_status=0, message="All retries failed")
             return []
         
-        results = data.get('results', [])
-        slog.req_end(provider="google", op="search_nearby", stage="geo", status="ok", request_token=token, http_status=response.status_code, provider_code=api_status, meta={"results": len(results)})
+        if response.status_code != 200:
+            slog.req_end(provider="google", op="search_nearby", stage="geo", status="error", request_token=token, http_status=response.status_code, message=response.text[:200])
+            return []
+        
+        data = response.json()
+        results = data.get('places', [])
+        slog.req_end(provider="google", op="search_nearby", stage="geo", status="ok", request_token=token, http_status=response.status_code, meta={"results": len(results)})
         return results
+    
+    def _search_nearby_single_type(
+        self,
+        lat: float,
+        lon: float,
+        radius_m: int,
+        place_type: str,
+        trace_ctx: 'AnalysisTraceContext | None' = None,
+    ) -> List[dict]:
+        """Convenience wrapper — single type search."""
+        return self._search_nearby(lat, lon, radius_m, [place_type], trace_ctx=trace_ctx)
     
     def _create_poi_from_place(
         self,
@@ -261,16 +364,18 @@ class GooglePlacesClient:
         ref_lat: float,
         ref_lon: float
     ) -> Optional[POI]:
-        """Tworzy POI z odpowiedzi Google Places."""
+        """Tworzy POI z odpowiedzi Google Places API (New)."""
         try:
-            location = place.get('geometry', {}).get('location', {})
-            place_lat = location.get('lat')
-            place_lon = location.get('lng')
+            location = place.get('location', {})
+            place_lat = location.get('latitude')
+            place_lon = location.get('longitude')
             
             if not place_lat or not place_lon:
                 return None
             
-            name = place.get('name', 'Obiekt bez nazwy')
+            # displayName jest obiektem z polami text i languageCode
+            display_name = place.get('displayName', {})
+            name = display_name.get('text', 'Obiekt bez nazwy') if isinstance(display_name, dict) else str(display_name or 'Obiekt bez nazwy')
             
             # Znajdź najbardziej pasującą subkategorię
             subcategory = our_category  # fallback
@@ -288,6 +393,9 @@ class GooglePlacesClient:
             secondary = secondary[:1]
             badges = google_types_to_badges(types)
             
+            # place_id w nowym API to pole 'id'
+            place_id = place.get('id')
+            
             return POI(
                 lat=place_lat,
                 lon=place_lon,
@@ -296,14 +404,14 @@ class GooglePlacesClient:
                 subcategory=subcategory,
                 distance_m=distance,
                 tags={
-                    'place_id': place.get('place_id'),
+                    'place_id': place_id,
                     'rating': place.get('rating'),
-                    'user_ratings_total': place.get('user_ratings_total'),
-                    'types': place.get('types', []),
+                    'user_ratings_total': place.get('userRatingCount'),
+                    'types': types,
                     'source': 'google_fallback',
                 },
                 source='google_fallback',
-                place_id=place.get('place_id'),
+                place_id=place_id,
                 primary_category=our_category,
                 secondary_categories=secondary,
                 badges=badges,
@@ -333,109 +441,176 @@ class GooglePlacesClient:
     
     # ===== METODY DLA HYBRID ENRICHMENT =====
     
-    FIND_PLACE_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
-    PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
-    
     def find_place_details(
         self,
         name: str,
         lat: float,
         lon: float,
         search_radius: int = 100,
-        fields: List[str] = None
+        fields: List[str] = None,
+        trace_ctx: 'AnalysisTraceContext | None' = None,
     ) -> Optional[dict]:
         """
-        Znajduje miejsce używając Nearby Search + keyword, potem Place Details.
-        Znacznie dokładniejsze niż text search - szuka w małym promieniu od POI.
+        Znajduje miejsce i pobiera szczegóły w JEDNYM zapytaniu Text Search.
         
-        Args:
-            name: Nazwa POI (np. "Biedronka")
-            lat, lon: Lokalizacja POI z OSM
-            search_radius: Promień wyszukiwania (domyślnie 100m)
-            fields: Pola do pobrania z Details
+        Optymalizacja: Text Search zwraca rating/reviews/location bezpośrednio,
+        więc nie potrzebujemy osobnego Place Details (1 req zamiast 2).
         
         Returns:
-            dict z rating, user_ratings_total, geometry, place_id lub None
+            dict w formacie kompatybilnym ze starym API lub None
         """
         if not self.api_key:
             return None
         
-        fields = fields or ['rating', 'user_ratings_total', 'geometry', 'place_id', 'types']
-        
         try:
-            # 1. Nearby Search z keyword - szukamy w małym promieniu od POI
-            place_id = self._find_nearby_by_keyword(name, lat, lon, search_radius)
-            if not place_id:
-                return None
-            
-            # 2. Place Details - pobierz rating/reviews + geometry
-            return self._get_place_details(place_id, fields)
-            
+            return self._text_search_place(name, lat, lon, search_radius, trace_ctx=trace_ctx)
         except Exception as e:
             logger.warning("find_place_details error for '%s': %s", name, e)
             return None
     
-    def _find_nearby_by_keyword(
+    def _text_search_place(
         self, 
         keyword: str, 
         lat: float, 
         lon: float, 
         radius: int = 100,
         trace_ctx: 'AnalysisTraceContext | None' = None,
-    ) -> Optional[str]:
+    ) -> Optional[dict]:
         """
-        Szuka miejsca przez Nearby Search z keyword.
-        Zwraca place_id najbliższego wyniku.
+        Text Search (New) — szuka miejsca po nazwie i zwraca pełne dane
+        (rating, reviews, location) w jednym zapytaniu.
+        
+        Zastępuje stary flow: _find_nearby_by_keyword + _get_place_details (2 req → 1 req).
         """
         from ..diagnostics import get_diag_logger, AnalysisTraceContext
         ctx = trace_ctx or AnalysisTraceContext()
         slog = get_diag_logger(__name__, ctx)
 
-        params = {
-            'location': f"{lat},{lon}",
-            'radius': radius,
-            'keyword': keyword,
-            'key': self.api_key,
+        text_search_url = "https://places.googleapis.com/v1/places:searchText"
+        
+        body = {
+            'textQuery': keyword,
+            'locationBias': {
+                'circle': {
+                    'center': {
+                        'latitude': lat,
+                        'longitude': lon,
+                    },
+                    'radius': float(radius),
+                }
+            },
+            'maxResultCount': 1,
+            'languageCode': 'pl',
         }
         
+        # Pobieramy rating/reviews razem z lokalizacją — 1 request zamiast 2!
+        field_mask = 'places.id,places.displayName,places.location,places.types,places.rating,places.userRatingCount'
+        headers = self._make_headers(field_mask)
+        
         token = slog.req_start(provider="google", op="find_nearby_keyword", stage="geo", meta={"keyword": keyword})
-        response = requests.get(self.NEARBY_SEARCH_URL, params=params, timeout=10)
-        response.raise_for_status()
+        
+        response = self._request_with_retry(
+            'POST', text_search_url,
+            json=body, headers=headers,
+        )
+        
+        if response is None or response.status_code != 200:
+            status_code = response.status_code if response else 0
+            slog.req_end(provider="google", op="find_nearby_keyword", stage="geo", status="error", request_token=token, http_status=status_code)
+            return None
+        
         data = response.json()
-        api_status = data.get('status', '')
+        places = data.get('places', [])
         
-        if api_status == 'OK' and data.get('results'):
-            place_id = data['results'][0].get('place_id')
-            slog.req_end(provider="google", op="find_nearby_keyword", stage="geo", status="ok", request_token=token, provider_code=api_status, meta={"place_id": place_id})
-            return place_id
+        if not places:
+            slog.req_end(provider="google", op="find_nearby_keyword", stage="geo", status="ok", request_token=token, meta={"results": 0})
+            return None
         
-        slog.req_end(provider="google", op="find_nearby_keyword", stage="geo", status="ok", request_token=token, provider_code=api_status, meta={"results": 0})
-        return None
+        place = places[0]
+        place_id = place.get('id')
+        slog.req_end(provider="google", op="find_nearby_keyword", stage="geo", status="ok", request_token=token, meta={"place_id": place_id})
+        
+        # Konwertuj na format kompatybilny ze starym API
+        location = place.get('location', {})
+        display_name = place.get('displayName', {})
+        
+        return {
+            'place_id': place_id,
+            'rating': place.get('rating'),
+            'user_ratings_total': place.get('userRatingCount'),
+            'types': place.get('types', []),
+            'geometry': {
+                'location': {
+                    'lat': location.get('latitude'),
+                    'lng': location.get('longitude'),
+                }
+            },
+            'name': display_name.get('text', '') if isinstance(display_name, dict) else str(display_name or ''),
+        }
     
-    def _get_place_details(self, place_id: str, fields: List[str], trace_ctx: 'AnalysisTraceContext | None' = None) -> Optional[dict]:
-        """Pobiera szczegóły miejsca z Place Details API."""
+    def _get_place_details(
+        self, 
+        place_id: str, 
+        fields: List[str] = None,
+        trace_ctx: 'AnalysisTraceContext | None' = None,
+    ) -> Optional[dict]:
+        """
+        Pobiera szczegóły miejsca z Place Details API (New).
+        
+        Zwraca dict w formacie kompatybilnym ze starym API (z kluczami
+        'place_id', 'rating', 'user_ratings_total', 'geometry', 'types')
+        dla kompatybilności z resztą kodu.
+        """
         from ..diagnostics import get_diag_logger, AnalysisTraceContext
         ctx = trace_ctx or AnalysisTraceContext()
         slog = get_diag_logger(__name__, ctx)
 
-        params = {
-            'place_id': place_id,
-            'fields': ','.join(fields),
-            'key': self.api_key,
+        # Place Details (New): GET places/{place_id}
+        url = f"{self.PLACE_DETAILS_URL}{place_id}"
+        
+        headers = {
+            'X-Goog-Api-Key': self.api_key,
+            'X-Goog-FieldMask': self.DETAILS_FIELD_MASK,
         }
         
         token = slog.req_start(provider="google", op="place_details", stage="geo", meta={"place_id": place_id})
-        response = requests.get(self.PLACE_DETAILS_URL, params=params, timeout=10)
-        response.raise_for_status()
+        
+        response = self._request_with_retry(
+            'GET', url, headers=headers,
+        )
+        
+        if response is None or response.status_code != 200:
+            status_code = response.status_code if response else 0
+            message = response.text[:200] if response else "All retries failed"
+            slog.req_end(provider="google", op="place_details", stage="geo", status="error", request_token=token, http_status=status_code, message=message)
+            return None
+        
         data = response.json()
-        api_status = data.get('status', '')
         
-        if api_status == 'OK' and data.get('result'):
-            slog.req_end(provider="google", op="place_details", stage="geo", status="ok", request_token=token, provider_code=api_status)
-            return data['result']
+        if not data.get('id'):
+            slog.req_end(provider="google", op="place_details", stage="geo", status="ok", request_token=token, meta={"result": None})
+            return None
         
-        slog.req_end(provider="google", op="place_details", stage="geo", status="ok", request_token=token, provider_code=api_status, meta={"result": None})
-        return None
+        # Konwertuj na format kompatybilny ze starym API
+        location = data.get('location', {})
+        display_name = data.get('displayName', {})
+        
+        result = {
+            'place_id': data.get('id'),
+            'rating': data.get('rating'),
+            'user_ratings_total': data.get('userRatingCount'),
+            'types': data.get('types', []),
+            'geometry': {
+                'location': {
+                    'lat': location.get('latitude'),
+                    'lng': location.get('longitude'),
+                }
+            },
+            'name': display_name.get('text', '') if isinstance(display_name, dict) else str(display_name or ''),
+        }
+        
+        slog.req_end(provider="google", op="place_details", stage="geo", status="ok", request_token=token)
+        return result
     
     def _empty_result(self) -> Tuple[Dict[str, List[POI]], Dict[str, Any]]:
         """Zwraca pustą strukturę wyników."""

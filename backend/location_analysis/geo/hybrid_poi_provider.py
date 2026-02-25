@@ -225,29 +225,30 @@ class HybridPOIProvider:
             cat_radius = radius_by_category.get(category, default_radius)
             slog.debug(stage="geo", provider="google", op="fallback_search", meta={"category": category, "types": types, "radius": cat_radius})
 
-            for gtype in types:
-                try:
-                    norm_lat, norm_lon = normalize_coords(lat, lon, precision=4)
-                    cache_key = TTLCache.make_key('google_nearby', norm_lat, norm_lon, cat_radius, gtype)
-                    cached = google_nearby_cache.get(cache_key)
-                    if cached is not None:
-                        results = cached
-                    else:
-                        results = self.google._search_nearby(lat, lon, cat_radius, gtype, trace_ctx=ctx)
-                        google_nearby_cache.set(cache_key, results)
+            try:
+                # Batch: 1 request per kategoria z wieloma typami
+                norm_lat, norm_lon = normalize_coords(lat, lon, precision=4)
+                types_key = ','.join(sorted(types))
+                cache_key = TTLCache.make_key('google_nearby', norm_lat, norm_lon, cat_radius, types_key)
+                cached = google_nearby_cache.get(cache_key)
+                if cached is not None:
+                    results = cached
+                else:
+                    results = self.google._search_nearby(lat, lon, cat_radius, types, trace_ctx=ctx)
+                    google_nearby_cache.set(cache_key, results)
 
-                    for place in results[:5]:  # Max 5 per type
-                        poi = self.google._create_poi_from_place(place, category, lat, lon)
-                        if poi and not self._is_duplicate(poi, pois[category]):
-                            # Skip if outside category radius
-                            if poi.distance_m > cat_radius:
-                                continue
-                            poi.tags['source'] = 'google_fallback'
-                            poi.source = 'google_fallback'
-                            pois[category].append(poi)
-                            
-                except Exception as e:
-                    slog.warning(stage="geo", provider="google", op="fallback_error", message=str(e), error_class="runtime", meta={"google_type": gtype})
+                for place in results[:10]:  # Max 10 per category batch
+                    poi = self.google._create_poi_from_place(place, category, lat, lon)
+                    if poi and not self._is_duplicate(poi, pois[category]):
+                        # Skip if outside category radius
+                        if poi.distance_m > cat_radius:
+                            continue
+                        poi.tags['source'] = 'google_fallback'
+                        poi.source = 'google_fallback'
+                        pois[category].append(poi)
+                        
+            except Exception as e:
+                slog.warning(stage="geo", provider="google", op="fallback_error", message=str(e), error_class="runtime", meta={"category": category, "types": types})
             
             # Sortuj po dystansie
             pois[category].sort(key=lambda p: p.distance_m)
@@ -327,8 +328,7 @@ class HybridPOIProvider:
                     
                     # Jeśli nie w cache, pobierz z API
                     if details is None:
-                        # OPTYMALIZACJA: jeśli mamy place_id, użyj tylko _get_place_details (1 req)
-                        # zamiast find_place_details który robi nearby+details (2 req)
+                        # OPTYMALIZACJA: jeśli mamy place_id, użyj _get_place_details (1 req)
                         if existing_place_id:
                             slog.debug(stage="geo", provider="google", op="enrich_direct", meta={"name": poi.name})
                             details = self.google._get_place_details(
@@ -338,12 +338,13 @@ class HybridPOIProvider:
                             if details:
                                 details['place_id'] = existing_place_id  # Upewnij się że place_id jest w response
                         else:
-                            # Brak place_id - pełne wyszukiwanie nearby+details (2 req)
+                            # Brak place_id — Text Search zwraca rating/reviews w 1 req
                             details = self.google.find_place_details(
                                 name=poi.name,
                                 lat=poi.lat,
                                 lon=poi.lon,
-                                search_radius=search_radius
+                                search_radius=search_radius,
+                                trace_ctx=ctx,
                             )
                         
                         # Ustal finalne place_id
@@ -388,7 +389,7 @@ class HybridPOIProvider:
                             continue
 
                         rating = details.get('rating')
-                        reviews = details.get('user_ratings_total', 0)
+                        reviews = details.get('user_ratings_total') or 0
                         types = details.get('types') or poi.tags.get('types') or []
                         
                         # Dopisz do tags
