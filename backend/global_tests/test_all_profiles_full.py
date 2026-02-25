@@ -274,11 +274,28 @@ def run_profile(
         # ── Data Quality ──
         out.write(f"\n  ── DATA QUALITY ──\n")
         out.write(f"  Confidence:  {data_quality.get('confidence_pct')}%\n")
-        out.write(f"  Reasons:     {data_quality.get('reasons')}\n")
-        out.write(f"  Empty cats:  {data_quality.get('empty_categories')}\n")
-        out.write(f"  Error cats:  {data_quality.get('error_categories')}\n")
+        # Confidence components
+        conf_comp = data_quality.get('confidence_components', {})
+        if conf_comp:
+            out.write(f"  Components:  provider={conf_comp.get('provider_confidence')}%  data={conf_comp.get('data_confidence')}%  signal={conf_comp.get('signal_confidence')}%\n")
+        reasons = data_quality.get('reasons', [])
+        if reasons:
+            for r in reasons:
+                out.write(f"    ⚠ {r}\n")
+        else:
+            out.write(f"  Reasons:     (brak)\n")
+        out.write(f"  Empty cats:  {data_quality.get('empty_categories') or '—'}\n")
+        out.write(f"  Error cats:  {data_quality.get('error_categories') or '—'}\n")
         out.write(f"  Overpass:    {data_quality.get('overpass_status')}\n")
-        out.write(f"  Cache used:  {data_quality.get('cache_used')}\n")
+        # Show overpass mode (local/public)
+        overpass_mode = gen_params.get('overpass_mode', '')
+        if overpass_mode:
+            out.write(f"  Overpass mode: {overpass_mode}\n")
+        # Cache ratio from coverage data
+        cache_used = data_quality.get('cache_used', False)
+        coverage_data_c = data_quality.get('coverage', {})
+        total_cats = len(coverage_data_c)
+        out.write(f"  Cache:       {'ON' if cache_used else 'OFF'} (categories={total_cats})\n")
 
         # ── Strengths / Weaknesses / Warnings ──
         out.write(f"\n  ── HIGHLIGHTS ──\n")
@@ -294,18 +311,27 @@ def run_profile(
         out.write(f"\n  ── KATEGORIE ({len(cats)}) ──\n")
         for cat, data in sorted(cats.items(), key=lambda x: x[1].get("score", 0), reverse=True):
             weight = profile_info.get("weights", {}).get(cat, 0)
-            critical = " 🔴CRITICAL" if data.get("is_critical") else ""
+            critical_str = ""
+            if data.get("is_critical"):
+                reason = data.get('critical_reason', '')
+                critical_str = f" \U0001f534CRITICAL({reason})" if reason else " \U0001f534CRITICAL"
+            # Use metric_type to label appropriately
+            metric = data.get('metric_type', 'poi_count')
+            count_val = data.get('poi_count', 0)
+            count_label = f"cells={count_val:2d}" if metric == 'green_elements' else f"pois={count_val:2d}"
             out.write(
                 f"  {cat:20s}  score={data.get('score'):5.1f}  "
-                f"pois={data.get('poi_count'):2d}  "
+                f"{count_label}  "
                 f"nearest={str(data.get('nearest_distance_m', '-')):>5s}m  "
                 f"weight={weight:+.2f}  "
                 f"radius={data.get('radius_used')}m"
-                f"{critical}\n"
+                f"{critical_str}\n"
             )
             for poi in data.get("top_pois", [])[:3]:
+                sub = poi.get('subcategory', '')
+                sub_label = f" ({sub})" if sub else ""
                 out.write(
-                    f"    → {poi.get('name', '?'):30s}  "
+                    f"    \u2192 {poi.get('name', '?'):30s}{sub_label:16s}  "
                     f"{poi.get('distance_m', '?')}m  "
                     f"score={poi.get('score', '?')}\n"
                 )
@@ -338,10 +364,62 @@ def run_profile(
                 out.write(f"  {cat:20s}  count={stats.get('count'):2d}  nearest={stats.get('nearest')}m\n")
 
         out.write(f"\n  ── GENERATION PARAMS ──\n")
+        out.write(f"  Scoring v:   {gen_params.get('scoring_version', '?')}\n")
         out.write(f"  Fetch radius: {gen_params.get('fetch_radius')}m\n")
         out.write(f"  POI provider: {gen_params.get('poi_provider')}\n")
         out.write(f"  Radii: {json.dumps(gen_params.get('radii', {}), indent=None)}\n")
 
+        # ── Quiet Score Debug ──
+        quiet_debug = scoring.get('quiet_debug', {})
+        if quiet_debug:
+            out.write(f"\n  ── QUIET SCORE DEBUG ──\n")
+            out.write(f"  Base:              {quiet_debug.get('base')}\n")
+            out.write(f"  Green density:     +{quiet_debug.get('green_density_bonus', 0)} (density={quiet_debug.get('green_density_value', 0)})\n")
+            out.write(f"  Park proximity:    +{quiet_debug.get('park_proximity_bonus', 0)} (nearest={quiet_debug.get('nearest_park_m')}m)\n")
+            out.write(f"  Transport penalty: {quiet_debug.get('transport_penalty', 0)} (count={quiet_debug.get('near_transport_count', 0)})\n")
+            out.write(f"  Food penalty:      {quiet_debug.get('food_penalty', 0)}\n")
+            out.write(f"  Mall penalty:      {quiet_debug.get('mall_penalty', 0)} (nearest={quiet_debug.get('nearest_mall_m')}m)\n")
+            out.write(f"  School penalty:    {quiet_debug.get('school_penalty', 0)} (nearest={quiet_debug.get('nearest_school_m')}m)\n")
+            out.write(f"  Heavy traffic:     {quiet_debug.get('heavy_traffic_penalty', 0)} (nearest={quiet_debug.get('nearest_heavy_m')}m)\n")
+            out.write(f"  Primary road:      {quiet_debug.get('primary_road_penalty', 0)} (nearest={quiet_debug.get('nearest_primary_m')}m)\n")
+            out.write(f"  Rails penalty:     {quiet_debug.get('rails_penalty', 0)} (nearest={quiet_debug.get('nearest_rails_m')}m)\n")
+            out.write(f"  Final:             {quiet_debug.get('final')}\n")
+
+        # ── Category Trace (coverage from data_quality) ──
+        coverage_data = data_quality.get('coverage', {})
+        if coverage_data:
+            out.write(f"\n  ── CATEGORY TRACE ──\n")
+            for cat, cov in sorted(coverage_data.items()):
+                src = cov.get('source', '?')
+                raw = cov.get('raw_count', 0)
+                kept = cov.get('kept_count', 0)
+                status = cov.get('status', '?')
+                reason = cov.get('status_reason', '')
+                grid = cov.get('grid_cells', 0)
+                sub_dist = cov.get('subcategory_distribution', {})
+                sub_str = ', '.join(f"{k}:{v}" for k, v in sorted(sub_dist.items(), key=lambda x: -x[1])[:5]) if sub_dist else '—'
+                reason_str = f"  reason={reason}" if reason and reason != 'ok' else ""
+                grid_str = f"  grid={grid}" if grid > 0 else ""
+                out.write(
+                    f"  {cat:22s}  src={src:8s}  raw={raw:3d}  kept={kept:3d}  "
+                    f"status={status:8s}{reason_str}{grid_str}  types=[{sub_str}]\n"
+                )
+        
+        # ── Validation: pois vs trace.kept ──
+        validation_issues = []
+        if coverage_data:
+            for cat, data in cats.items():
+                metric = data.get('metric_type', 'poi_count')
+                if metric != 'poi_count':
+                    continue  # Skip grid-based categories
+                scoring_pois = data.get('poi_count', 0)
+                trace_cov = coverage_data.get(cat, {})
+                trace_kept = trace_cov.get('kept_count', 0)
+                if scoring_pois != trace_kept:
+                    validation_issues.append(
+                        f"MISMATCH {cat}: scoring pois={scoring_pois} vs trace kept={trace_kept}"
+                    )
+        
         result = {
             "profile": profile_key,
             "status": "OK",
@@ -359,6 +437,7 @@ def run_profile(
 
         # ── Anomaly detection ──
         anomalies = detect_anomalies(result)
+        anomalies.extend(validation_issues)  # pois-vs-trace mismatches
         result["anomalies"] = anomalies
         if anomalies:
             out.write(f"\n  ── 🔴 ANOMALIE ({len(anomalies)}) ──\n")

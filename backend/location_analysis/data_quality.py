@@ -18,25 +18,28 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CategoryCoverage:
     """Coverage stats for a single POI category."""
-    source: str = "none"  # "overpass" | "google" | "mixed" | "none"
+    source: str = "overpass"  # 'overpass' | 'google' | 'mixed'
     # SEMANTIC STATUS:
     # - "ok": kept >= 3, normal data
     # - "partial": 1-2 kept, sparse but valid
     # - "empty": kept == 0, provider OK → SIGNAL (not error!)
     # - "error": provider failure → DATA QUALITY ISSUE
     status: str = "empty"
+    status_reason: str = ""  # e.g. 'low_count', 'provider_error', 'low_poi_but_grid_ok'
     raw_count: int = 0  # Before filters
     kept_count: int = 0  # After filters
     radius_m: int = 0
-    subcategory_distribution: Dict[str, int] = field(default_factory=dict)  # e.g. {'bus_stop': 5, 'platform': 3}
-    rejects: Dict[str, int] = field(default_factory=dict)  # {"radius": 30, "membership": 4}
-    provider_errors: List[str] = field(default_factory=list)  # ["timeout_504"]
-    had_provider_error: bool = False  # Was there any error before fallback?
+    grid_cells: int = 0  # For grid/density-based categories (nature_background)
+    subcategory_distribution: Dict[str, int] = field(default_factory=dict)
+    rejects: Dict[str, int] = field(default_factory=dict)
+    provider_errors: List[str] = field(default_factory=list)
+    had_provider_error: bool = False
     
     def to_dict(self) -> dict:
-        return {
+        d = {
             "source": self.source,
             "status": self.status,
+            "status_reason": self.status_reason,
             "raw_count": self.raw_count,
             "kept_count": self.kept_count,
             "radius_m": self.radius_m,
@@ -45,6 +48,9 @@ class CategoryCoverage:
             "provider_errors": self.provider_errors,
             "had_provider_error": self.had_provider_error,
         }
+        if self.grid_cells > 0:
+            d["grid_cells"] = self.grid_cells
+        return d
 
 
 @dataclass
@@ -211,23 +217,45 @@ def calculate_confidence(
             if weight < 0.10:
                 continue
             cov = coverage.get(cat)
-            if cov and cov.status == "empty":
+            if not cov:
+                continue
+            
+            # Grid-based categories: don't penalize POI count if grid signal exists
+            has_grid = cov.grid_cells > 0
+            
+            if cov.status == "empty" and not has_grid:
                 signal_confidence -= 15
                 reasons.append(f"Brak obiektów: {_category_name(cat)} w promieniu {cov.radius_m}m (waga {weight:.0%})")
-            elif cov and cov.status == "partial" and cov.kept_count < 2:
+            elif cov.status == "empty" and has_grid:
+                # Grid signal OK, just low/no POI — minor note, not a confidence drop
+                reasons.append(f"{_category_name(cat)}: low POI coverage ({cov.kept_count}), grid signal used (cells={cov.grid_cells})")
+            elif cov.status == "partial" and cov.kept_count < 2 and not has_grid:
                 signal_confidence -= 5
                 reasons.append(f"Mało danych: {_category_name(cat)} ({cov.kept_count} POI, waga {weight:.0%})")
+            elif cov.status == "partial" and cov.kept_count < 2 and has_grid:
+                reasons.append(f"{_category_name(cat)}: low POI coverage ({cov.kept_count}), grid signal used (cells={cov.grid_cells})")
+            
             # Type diversity: if a high-weight category has >80% single subtype, flag it
-            if cov and cov.subcategory_distribution:
+            if cov.subcategory_distribution:
                 total_pois = sum(cov.subcategory_distribution.values())
                 if total_pois >= 3:
                     dominant_type = max(cov.subcategory_distribution.values())
                     if dominant_type / total_pois > 0.8:
                         dominant_name = max(cov.subcategory_distribution, key=cov.subcategory_distribution.get)
                         signal_confidence -= 3
-                        reasons.append(
-                            f"Niska różnorodność: {_category_name(cat)} — {dominant_type}/{total_pois} to {dominant_name}"
-                        )
+                        # For transport: show which types are missing
+                        if cat == 'transport':
+                            present_types = set(cov.subcategory_distribution.keys())
+                            expected_types = {'tram_stop', 'rail_station', 'subway_entrance'}
+                            missing = expected_types - present_types
+                            missing_str = f" (no {'/'.join(sorted(missing))})" if missing else ""
+                            reasons.append(
+                                f"Niska różnorodność: {_category_name(cat)} — {dominant_type}/{total_pois} to {dominant_name}{missing_str}"
+                            )
+                        else:
+                            reasons.append(
+                                f"Niska różnorodność: {_category_name(cat)} — {dominant_type}/{total_pois} to {dominant_name}"
+                            )
     
     # Clamp components
     provider_confidence = max(0, min(100, provider_confidence))
@@ -277,6 +305,7 @@ def build_data_quality_report(
     reject_counts: Dict[str, Dict[str, int]] = None,
     provider_errors_by_category: Dict[str, List[str]] = None,
     profile_weights: Dict[str, float] = None,
+    grid_cells_by_category: Dict[str, int] = None,
 ) -> DataQualityReport:
     """
     Build DataQualityReport from POI data and metadata.
@@ -328,6 +357,25 @@ def build_data_quality_report(
         else:
             cat_status = determine_status(kept_count, raw, had_error)
         
+        # Determine status reason — grid categories get special treatment
+        cat_grid_cells = (grid_cells_by_category or {}).get(cat, 0)
+        if cat_status == 'error':
+            status_reason = 'provider_error'
+        elif cat_status == 'empty' and cat_grid_cells > 0:
+            status_reason = 'no_poi_but_grid_ok'
+        elif cat_status == 'empty' and raw > 0:
+            status_reason = 'all_filtered'
+        elif cat_status == 'empty':
+            status_reason = 'no_data'
+        elif cat_status == 'partial' and kept_count < 3 and cat_grid_cells > 0:
+            status_reason = 'low_poi_but_grid_ok'
+        elif cat_status == 'partial' and kept_count < 3:
+            status_reason = 'low_count'
+        elif cat_status == 'no_query':
+            status_reason = 'not_queried'
+        else:
+            status_reason = 'ok'
+        
         # Build subcategory distribution (Phase 6)
         subcategory_dist = {}
         for poi in pois:
@@ -337,9 +385,11 @@ def build_data_quality_report(
         coverage[cat] = CategoryCoverage(
             source=source,
             status=cat_status,
+            status_reason=status_reason,
             raw_count=raw,
             kept_count=kept_count,
             radius_m=radii.get(cat, 1000),
+            grid_cells=cat_grid_cells,
             subcategory_distribution=subcategory_dist,
             rejects=rejects,
             provider_errors=cat_errors,

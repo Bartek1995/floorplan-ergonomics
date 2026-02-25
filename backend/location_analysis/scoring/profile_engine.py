@@ -48,6 +48,7 @@ class CategoryScoreResult:
     nearest_distance_m: Optional[float] = None
     poi_count: int = 0
     radius_used: int = 0
+    metric_type: str = "poi_count"  # 'poi_count' or 'green_elements'
     contributions: List[POIContribution] = field(default_factory=list)
     is_critical: bool = False
     critical_threshold: Optional[float] = None
@@ -63,6 +64,7 @@ class CategoryScoreResult:
             'coverage_bonus': round(self.coverage_bonus, 1),
             'nearest_distance_m': self.nearest_distance_m,
             'poi_count': self.poi_count,
+            'metric_type': self.metric_type,
             'radius_used': self.radius_used,
             'is_critical': self.is_critical,
             'critical_threshold': self.critical_threshold,
@@ -89,6 +91,7 @@ class ScoringResult:
     noise_penalty: float       # Kara za hałas
     roads_penalty: float       # Kara za infrastrukturę drogową
     quiet_score: float         # Quiet score (0-100)
+    quiet_debug: Dict[str, Any] = field(default_factory=dict)  # Quiet score breakdown
     
     category_results: Dict[str, CategoryScoreResult] = field(default_factory=dict)
     profile_key: str = ""
@@ -125,6 +128,7 @@ class ScoringResult:
             'strengths': self.strengths,
             'weaknesses': self.weaknesses,
             'roads_debug': self.roads_debug,
+            'quiet_debug': self.quiet_debug,
             'debug': self.debug,
         }
 
@@ -580,6 +584,7 @@ class ProfileScoringEngine:
             coverage_bonus=water_bonus,
             nearest_distance_m=nearest_green,
             poi_count=nature_metrics.get('total_green_elements', 0),
+            metric_type='green_elements',
             radius_used=radius,
         )
     

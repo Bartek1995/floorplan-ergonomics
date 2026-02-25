@@ -290,6 +290,13 @@ class AnalysisService:
                         if items:
                             slog.debug(stage="geo", op="poi_dump", meta={"category": cat, "count": len(items), "top3": [p.name for p in items[:3]]})
                 
+                # Build grid cells map for nature_background
+                nature_m = metrics.get('nature', {}) if metrics else {}
+                grid_cells_map = {}
+                green_elems = nature_m.get('total_green_elements', 0)
+                if green_elems > 0:
+                    grid_cells_map['nature_background'] = green_elems
+                
                 # Build DataQualityReport for debugging and UI
                 data_quality = build_data_quality_report(
                     pois_by_category=pois,
@@ -300,6 +307,7 @@ class AnalysisService:
                     fallback_contributed=[],  # TODO: track from hybrid provider
                     cache_used=poi_cache_used,
                     profile_weights=profile.weights,
+                    grid_cells_by_category=grid_cells_map,
                 )
                 
                 ctx.start_stage("scoring")
@@ -325,6 +333,8 @@ class AnalysisService:
                     nature_metrics=metrics.get('nature'),
                     base_neighborhood_score=neighborhood_score.total_score,
                 )
+                # Attach quiet score breakdown for QA visibility
+                profile_scoring_result.quiet_debug = getattr(neighborhood_score, 'quiet_debug', {}) or {}
                 ctx.end_stage("profile_scoring")
                 
                 # 3. Generuj werdykt decyzyjny (używamy nowego profilu)
@@ -397,6 +407,7 @@ class AnalysisService:
                 'radii': effective_radius_m,
                 'fetch_radius': fetch_radius,
                 'poi_provider': poi_provider,
+                'overpass_mode': config.overpass_mode,
                 'poi_cache_used': poi_cache_used,  # DEV: czy dane POI były z cache
                 'coords': {'lat': lat, 'lon': lon},
                 # Data Quality Report for DEV mode
