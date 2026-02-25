@@ -167,14 +167,14 @@ class AnalysisService:
         price: Optional[float],  # Opcjonalne - dane nieruchomości
         area_sqm: Optional[float],  # Opcjonalne - dane nieruchomości
         address: str,
-        radius: int = 500,
+        radius: int = None,
         reference_url: str = None,
         user_profile: str = 'family',  # Legacy - mapujemy na profile_key
-        poi_provider: str = 'overpass',
+        poi_provider: str = None,
         profile_key: str = None,  # Nowy parametr - klucz profilu
         radius_overrides: Dict[str, int] = None,  # User-defined radius per category
-        enable_enrichment: bool = False,  # Google enrichment (rating/reviews) — kosztowne
-        enable_fallback: bool = True,  # Google fallback dla pustych kategorii
+        enable_enrichment: bool = None,  # None = use config default
+        enable_fallback: bool = None,  # None = use config default
     ):
         """
         Generator analizy lokalizacji (location-first model).
@@ -189,6 +189,18 @@ class AnalysisService:
             radius_overrides: Opcjonalne nadpisanie promieni per kategoria (np. {'shops': 800})
         """
         import json
+        from .app_config import get_config
+        config = get_config()
+        
+        # Defaults z centralnej konfiguracji (jeśli nie podane per-request)
+        if radius is None:
+            radius = config.default_radius
+        if poi_provider is None:
+            poi_provider = config.default_poi_provider
+        if enable_enrichment is None:
+            enable_enrichment = config.default_enrichment
+        if enable_fallback is None:
+            enable_fallback = config.default_fallback
         
         ctx = AnalysisTraceContext()
         slog = get_diag_logger(__name__, ctx)
@@ -253,6 +265,8 @@ class AnalysisService:
             profile_scoring_result = None
             verdict = None
             ai_insights = None
+            poi_cache_used = False
+            data_quality = None
             
             try:
                 ctx.start_stage("geo")
@@ -325,30 +339,33 @@ class AnalysisService:
                 )
                 
                 # 4. NOWE: Generuj AI insights (Single Source of Truth architecture)
-                ctx.start_stage("ai")
-                yield json.dumps({'status': 'ai', 'message': 'Generowanie opisów AI...'}) + '\n'
-                try:
-                    # Build canonical factsheet - the ONLY input AI receives
-                    quiet = neighborhood_score.quiet_score or 50.0
-                    factsheet = build_factsheet_from_scoring(
-                        profile=profile,
-                        scoring_result=profile_scoring_result,
-                        verdict=verdict,
-                        quiet_score=quiet,
-                        pois_by_category=pois,
-                        listing=listing,
-                    )
-                    
-                    # Generate AI insights from factsheet (not raw data)
-                    ai_insights = generate_insights_from_factsheet(factsheet)
-                    ai_dur = ctx.end_stage("ai")
-                    
-                    if ai_insights:
-                        slog.info(stage="ai", op="insights_generated", duration_ms=ai_dur, meta={"summary_len": len(ai_insights.summary)})
-                except Exception as ai_error:
-                    ctx.end_stage("ai")
-                    slog.warning(stage="ai", op="insights_failed", message=str(ai_error), error_class="runtime")
-                    ai_insights = None
+                if config.report_ai_insights:
+                    ctx.start_stage("ai")
+                    yield json.dumps({'status': 'ai', 'message': 'Generowanie opisów AI...'}) + '\n'
+                    try:
+                        # Build canonical factsheet - the ONLY input AI receives
+                        quiet = neighborhood_score.quiet_score or 50.0
+                        factsheet = build_factsheet_from_scoring(
+                            profile=profile,
+                            scoring_result=profile_scoring_result,
+                            verdict=verdict,
+                            quiet_score=quiet,
+                            pois_by_category=pois,
+                            listing=listing,
+                        )
+                        
+                        # Generate AI insights from factsheet (not raw data)
+                        ai_insights = generate_insights_from_factsheet(factsheet)
+                        ai_dur = ctx.end_stage("ai")
+                        
+                        if ai_insights:
+                            slog.info(stage="ai", op="insights_generated", duration_ms=ai_dur, meta={"summary_len": len(ai_insights.summary)})
+                    except Exception as ai_error:
+                        ctx.end_stage("ai")
+                        slog.warning(stage="ai", op="insights_failed", message=str(ai_error), error_class="runtime")
+                        ai_insights = None
+                else:
+                    slog.info(stage="ai", op="skipped", message="AI insights disabled in config")
                 
             except Exception as e:
                 slog.error(stage="geo", op="neighborhood", message=str(e), exc=type(e).__name__, error_class="runtime", hint="POI fetch or scoring failed")
@@ -362,7 +379,7 @@ class AnalysisService:
                 neighborhood_score=neighborhood_score,
                 poi_stats=poi_stats,
                 all_pois=pois,
-                air_quality=self._fetch_air_quality(lat, lon, slog),
+                air_quality=self._fetch_air_quality(lat, lon, slog) if config.report_air_quality else None,
             )
             ctx.end_stage("report")
             
@@ -689,7 +706,11 @@ class AnalysisService:
         Zwraca None jeśli cokolwiek nie działa (graceful degradation).
         """
         try:
-            provider = get_air_quality_provider('open_meteo')
+            from .app_config import get_config
+            aq_config = get_config()
+            if not aq_config.air_quality_enabled:
+                return None
+            provider = get_air_quality_provider(aq_config.air_quality_provider)
             result = provider.get_air_quality(lat, lon)
             if result and slog:
                 slog.info(

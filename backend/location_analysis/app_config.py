@@ -161,7 +161,7 @@ def get_config() -> AppConfig:
 
         try:
             from django.conf import settings
-            raw = getattr(settings, 'NEST_SCORE_CONFIG', {})
+            raw = getattr(settings, 'LOKTIS_CONFIG', {})
         except Exception:
             raw = {}
 

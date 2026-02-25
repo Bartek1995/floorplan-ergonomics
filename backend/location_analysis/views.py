@@ -23,6 +23,7 @@ from .services import analysis_service
 from .rate_limiter import rate_limit
 from .providers import ProviderRegistry
 from .scoring.profiles import get_profiles_summary, get_profile
+from .app_config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -347,3 +348,16 @@ class RescoreReportView(APIView):
                 {'error': 'Wewnętrzny błąd serwera podczas przeliczania profilu'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class AppConfigView(APIView):
+    """
+    Endpoint do odczytu centralnej konfiguracji aplikacji.
+    
+    GET /api/config/
+    Zwraca aktualne ustawienia (bez sekretów jak API keys).
+    """
+    
+    def get(self, request):
+        config = get_config()
+        return Response(config.to_public_dict())

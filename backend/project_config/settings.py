@@ -160,10 +160,10 @@ CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL', 'True').lower() in ('true',
 
 
 # =============================================================================
-# NEST SCORE — Centralna konfiguracja aplikacji
+# LOKTIS — Centralna konfiguracja aplikacji
 # Wartości czytane przez location_analysis.app_config.get_config()
 # =============================================================================
-NEST_SCORE_CONFIG = {
+LOKTIS_CONFIG = {
     # --- Overpass API ---
     'OVERPASS_URL': os.getenv('OVERPASS_URL', 'https://overpass-api.de/api/interpreter'),
     'OVERPASS_FALLBACK_URLS': os.getenv(

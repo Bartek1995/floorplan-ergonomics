@@ -31,10 +31,10 @@ EMPTY_NATURE_METRICS = {
 }
 
 def make_mock_pois(pois_dict=None):
-    """Tworzy mock return value dla _get_pois (tuple: pois, metrics)."""
+    """Tworzy mock return value dla _get_pois (tuple: pois, metrics, cache_used)."""
     if pois_dict is None:
         pois_dict = {cat: [] for cat in ['shops', 'transport', 'education', 'health', 'nature', 'leisure', 'food', 'finance', 'roads']}
-    return (pois_dict, {'nature': EMPTY_NATURE_METRICS})
+    return (pois_dict, {'nature': EMPTY_NATURE_METRICS}, False)
 
 
 class TestAnalyzeLocationAPIWithProfiles(TestCase):
@@ -357,8 +357,8 @@ class TestProfileInStreamMessages(TestCase):
     
     @patch.object(AnalysisService, '_get_pois')
     @patch.object(AnalysisService, '_save_location_to_db')
-    def test_persona_calculation_step_exists(self, mock_save, mock_pois):
-        """Jest krok 'persona' w streamie."""
+    def test_profile_calculation_step_exists(self, mock_save, mock_pois):
+        """Jest krok 'profile' w streamie."""
         mock_pois.return_value = make_mock_pois()
         mock_save.return_value = None
         
@@ -368,7 +368,7 @@ class TestProfileInStreamMessages(TestCase):
             address='Test', user_profile='urban',
         ))
         
-        # Szukaj eventu 'persona'
-        persona_events = [json.loads(r) for r in results if 'persona' in r]
+        # Szukaj eventu 'profile'
+        profile_events = [json.loads(r) for r in results if 'profile' in r]
         
-        self.assertGreater(len(persona_events), 0)
+        self.assertGreater(len(profile_events), 0)

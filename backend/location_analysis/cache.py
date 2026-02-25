@@ -106,11 +106,26 @@ class TTLCache:
         return hashlib.md5(key_str.encode()).hexdigest()
 
 
-# Globalne instancje cache
-listing_cache = TTLCache(default_ttl=3600, max_size=500)  # 1h dla ogłoszeń
-overpass_cache = TTLCache(default_ttl=604800, max_size=200)  # 7 dni dla POI
-google_details_cache = TTLCache(default_ttl=604800, max_size=2000)  # 7 dni dla Google Details
-google_nearby_cache = TTLCache(default_ttl=259200, max_size=2000)  # 3 dni dla Google Nearby
+# Globalne instancje cache — TTL z centralnej konfiguracji
+def _create_caches():
+    try:
+        from .app_config import get_config
+        config = get_config()
+        return (
+            TTLCache(default_ttl=config.cache_ttl_listing, max_size=500),
+            TTLCache(default_ttl=config.cache_ttl_pois, max_size=200),
+            TTLCache(default_ttl=config.cache_ttl_google_details, max_size=2000),
+            TTLCache(default_ttl=config.cache_ttl_google_nearby, max_size=2000),
+        )
+    except Exception:
+        return (
+            TTLCache(default_ttl=3600, max_size=500),
+            TTLCache(default_ttl=604800, max_size=200),
+            TTLCache(default_ttl=604800, max_size=2000),
+            TTLCache(default_ttl=259200, max_size=2000),
+        )
+
+listing_cache, overpass_cache, google_details_cache, google_nearby_cache = _create_caches()
 
 
 def normalize_coords(lat: float, lon: float, precision: int = 4) -> tuple:
