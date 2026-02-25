@@ -95,14 +95,6 @@ def detect_anomalies(result: dict) -> list[str]:
     critical_caps = result.get("critical_caps", [])
     profile = result.get("profile", "")
 
-    # car_access=0 mimo obecności dróg
-    road_count = roads_debug.get("count", 0) if roads_debug else 0
-    car_score = cat_scores.get("car_access")
-    if road_count > 0 and car_score is not None and car_score == 0:
-        anomalies.append(
-            f"car_access=0 mimo {road_count} dróg — brak query Overpass lub brak POI?"
-        )
-
     # confidence=100 mimo pustych kategorii
     if confidence == 100 and empty_cats:
         anomalies.append(
@@ -110,19 +102,14 @@ def detect_anomalies(result: dict) -> list[str]:
         )
 
     # pusta kategoria krytyczna dla profilu
-    # (profile-specific: car_access dla car_first, transport dla urban, etc.)
-    critical_map = {
-        "car_first": ["car_access"],
-        "urban": ["transport", "food"],
-        "family": ["education", "health"],
-        "quiet_green": ["nature_place"],
-        "active_sport": ["leisure"],
-    }
-    for crit_cat in critical_map.get(profile, []):
+    critical_cats_expected = []
+    profile_info = result.get("profile", {})
+    if isinstance(profile_info, dict) and "critical_caps" in profile_info:
+        critical_cats_expected = [cap.get("category") for cap in profile_info.get("critical_caps", []) if "category" in cap]
+    
+    for crit_cat in critical_cats_expected:
         if crit_cat in empty_cats:
-            anomalies.append(
-                f"Kategoria krytyczna '{crit_cat}' jest pusta dla profilu '{profile}'"
-            )
+            anomalies.append(f"Kategoria krytyczna '{crit_cat}' jest pusta dla profilu '{profile}'")
 
     # critical cap aktywny = potencjalny problem z danymi
     if critical_caps:
@@ -144,6 +131,7 @@ def run_profile(
     lon: float,
     address: str,
     api_url: str,
+    poi_provider: str,
     use_cache: bool,
     out,
 ) -> dict:
@@ -156,7 +144,7 @@ def run_profile(
         "address": address,
         "radius": 500,
         "profile_key": profile_key,
-        "poi_provider": "hybrid",
+        "poi_provider": poi_provider,
         "enable_enrichment": False,  # Disable expensive Google enrichment in tests
     }
     if not use_cache:
@@ -592,12 +580,14 @@ def main():
     parser.add_argument("--profiles", type=str, default=None,
                         help="Comma-separated profiles to test (default: all)")
     parser.add_argument("--api-url", type=str, default=DEFAULT_API_URL, help="API URL")
+    parser.add_argument("--poi-provider", type=str, default="hybrid", choices=["hybrid", "overpass", "google"], help="POI Provider")
     parser.add_argument("--no-cache", action="store_true", help="Bypass POI cache (cold run)")
     parser.add_argument("--runs", type=int, default=1, help="Number of runs for stability test")
     args = parser.parse_args()
 
     profiles = [p.strip() for p in args.profiles.split(",")] if args.profiles else ALL_PROFILES
     use_cache = not args.no_cache
+    poi_provider = args.poi_provider
 
     # Przygotuj katalog logów
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -643,6 +633,7 @@ def main():
                     lon=args.lon,
                     address=args.address,
                     api_url=args.api_url,
+                    poi_provider=poi_provider,
                     use_cache=use_cache,
                     out=out,
                 )

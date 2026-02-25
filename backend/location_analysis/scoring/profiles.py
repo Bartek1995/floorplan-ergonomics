@@ -225,22 +225,22 @@ PROFILE_URBAN = ProfileConfig(
     
     weights={
         Category.TRANSPORT.value: 0.25,
-        Category.FOOD.value: 0.18,
+        Category.FOOD.value: 0.20,
         Category.SHOPS.value: 0.16,
         Category.LEISURE.value: 0.12,
         Category.HEALTH.value: 0.08,
         Category.FINANCE.value: 0.05,
-        Category.NATURE_PLACE.value: 0.06,
+        Category.NATURE_PLACE.value: 0.04,
         Category.NATURE_BACKGROUND.value: 0.03,
         Category.EDUCATION.value: 0.02,
-        Category.NOISE.value: -0.03,  # Kara za hałas
+        Category.NOISE.value: -0.05,  # Kara za hałas
     },
     
     radius_m={
-        Category.TRANSPORT.value: 700,
-        Category.FOOD.value: 800,
-        Category.SHOPS.value: 600,
-        Category.LEISURE.value: 800,
+        Category.TRANSPORT.value: 500,
+        Category.FOOD.value: 600,
+        Category.SHOPS.value: 400,
+        Category.LEISURE.value: 600,
         Category.HEALTH.value: 1200,
         Category.FINANCE.value: 800,
         Category.NATURE_PLACE.value: 900,
@@ -248,11 +248,11 @@ PROFILE_URBAN = ProfileConfig(
         Category.EDUCATION.value: 900,
     },
     
-    thresholds=VerdictThresholds(recommended=65, conditional=45),
+    thresholds=VerdictThresholds(recommended=70, conditional=50),
     
     critical_caps=[
-        (Category.TRANSPORT.value, CriticalCap(threshold=35, cap=65)),
-        (Category.FOOD.value, CriticalCap(threshold=25, cap=75)),
+        (Category.TRANSPORT.value, CriticalCap(threshold=45, cap=60)),
+        (Category.FOOD.value, CriticalCap(threshold=35, cap=60)),
     ],
     
     ux_context={
@@ -342,8 +342,8 @@ PROFILE_QUIET_GREEN = ProfileConfig(
     emoji="🌿",
     
     weights={
-        Category.NATURE_PLACE.value: 0.22,
-        Category.NATURE_BACKGROUND.value: 0.20,
+        Category.NATURE_PLACE.value: 0.16,
+        Category.NATURE_BACKGROUND.value: 0.26,
         Category.NOISE.value: -0.12,  # Mocna kara za hałas!
         Category.SHOPS.value: 0.12,
         Category.TRANSPORT.value: 0.08,
@@ -355,8 +355,8 @@ PROFILE_QUIET_GREEN = ProfileConfig(
     },
     
     radius_m={
-        Category.NATURE_PLACE.value: 1200,  # Park może być "celem" spaceru
-        Category.NATURE_BACKGROUND.value: 500,  # Tło ma być blisko
+        Category.NATURE_PLACE.value: 2000,  # Park może być dalej
+        Category.NATURE_BACKGROUND.value: 1000,  # Tło - lasy szerzej
         Category.SHOPS.value: 900,
         Category.TRANSPORT.value: 1200,
         Category.HEALTH.value: 2000,
@@ -517,7 +517,7 @@ PROFILE_CAR_FIRST = ProfileConfig(
     
     weights={
         Category.CAR_ACCESS.value: 0.20,
-        Category.NOISE.value: -0.08,
+        Category.NOISE.value: -0.06,  # Zredukowana kara pod kątem przedmieść
         Category.SHOPS.value: 0.16,
         Category.HEALTH.value: 0.12,
         Category.NATURE_PLACE.value: 0.10,
@@ -539,13 +539,13 @@ PROFILE_CAR_FIRST = ProfileConfig(
         Category.LEISURE.value: 1500,
         Category.FOOD.value: 1200,
         Category.FINANCE.value: 1200,
-        Category.CAR_ACCESS.value: 1000,
+        Category.CAR_ACCESS.value: 3000,
     },
     
     thresholds=VerdictThresholds(recommended=65, conditional=45),
     
     critical_caps=[
-        (Category.CAR_ACCESS.value, CriticalCap(threshold=35, cap=70)),
+        (Category.CAR_ACCESS.value, CriticalCap(threshold=15, cap=65)),
     ],
     
     ux_context={

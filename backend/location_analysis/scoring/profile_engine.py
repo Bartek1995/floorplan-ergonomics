@@ -341,17 +341,9 @@ class ProfileScoringEngine:
         total_score = max(0, min(100, total_score))
         total_score_pre_adjust = total_score
         
-        # 6. Profil koryguje bazową ocenę okolicy (jeśli dostępna)
+        # 6. Profil_engine przestał korygować ogólny score (nie używamy już wagi +/- 20).
+        # Profil jest źródłem prawdy dla oceny.
         base_adjustment = None
-        if base_neighborhood_score is not None:
-            delta = total_score - base_neighborhood_score
-            delta = max(-self.MAX_BASE_ADJUSTMENT, min(self.MAX_BASE_ADJUSTMENT, delta))
-            base_adjustment = delta
-            total_score = base_neighborhood_score + delta
-            total_score = max(0, min(100, total_score))
-            total_score, critical_caps_applied = self._apply_critical_caps(
-                total_score, category_scores, critical_caps_applied
-            )
         total_score_post_adjust = total_score
         
         # 7. Verdict
@@ -681,8 +673,15 @@ class ProfileScoringEngine:
                 penalty += 4
 
         # Road density — only count significant (noisy) roads, not tertiary/residential
+        # Mierzymy lokalne zagęszczenie dróg (max 1500m), żeby uniknąć karania przedmieść
+        # za główną infrastrukturę znajdującą się 3km dalej.
         SIGNIFICANT_ROAD_TYPES = {'motorway', 'trunk', 'primary', 'secondary', 'tram', 'rail'}
-        significant_count = sum(1 for r in roads if r.subcategory in SIGNIFICANT_ROAD_TYPES)
+        significant_count = sum(
+            1 for r in roads 
+            if r.subcategory in SIGNIFICANT_ROAD_TYPES 
+            and r.distance_m is not None 
+            and r.distance_m <= 1500
+        )
         road_count = len(roads)  # total for debug
         if significant_count >= 10:
             penalty += 5
